@@ -115,7 +115,9 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
       <DialogContent className="sm:max-w-md border-2 border-primary/30 bg-card/95 backdrop-blur-md">
         <DialogHeader>
           <DialogTitle className="text-2xl font-medieval text-primary text-center">Login Required</DialogTitle>
-          <DialogDescription className="text-center">Please login to continue your adventure</DialogDescription>
+          <DialogDescription className="text-center">
+            Please login to continue your adventure in Turup's Gambit
+          </DialogDescription>
         </DialogHeader>
 
         <Tabs

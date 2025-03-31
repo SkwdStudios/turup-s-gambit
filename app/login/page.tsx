@@ -197,7 +197,7 @@ export default function LoginPage() {
 
       <Card className="w-full max-w-md border-2 border-primary/30 shadow-xl bg-card/90 backdrop-blur-sm relative z-10">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-medieval text-primary">Court Piece</CardTitle>
+          <CardTitle className="text-3xl font-medieval text-primary">Turup's Gambit</CardTitle>
           <CardDescription>Enter the realm of strategy and cunning</CardDescription>
         </CardHeader>
         <CardContent>

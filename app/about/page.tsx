@@ -46,7 +46,7 @@ export default function AboutPage() {
 
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-16">
-          <h1 className="text-4xl md:text-6xl font-medieval text-primary mb-4">About Court Piece</h1>
+          <h1 className="text-4xl md:text-6xl font-medieval text-primary mb-4">About Turup's Gambit</h1>
           <p className="text-xl max-w-3xl mx-auto text-foreground/80">
             A legendary card game from the ancient realms, reimagined for the digital age
           </p>
@@ -57,8 +57,9 @@ export default function AboutPage() {
             <h2 className="text-3xl font-medieval text-secondary mb-6">The Legend</h2>
             <div className="prose prose-lg dark:prose-invert">
               <p>
-                Court Piece, known in the ancient scrolls as "Hokm," originated in the mystical eastern kingdoms. Legend
-                has it that kings and queens would gather to test their wits and strategy through this game of cards.
+                Turup's Gambit, known in the ancient scrolls as "Hokm," originated in the mystical eastern kingdoms.
+                Legend has it that kings and queens would gather to test their wits and strategy through this game of
+                cards.
               </p>
               <p>
                 As the game traveled westward, it evolved, taking on new rules and traditions. Knights would play

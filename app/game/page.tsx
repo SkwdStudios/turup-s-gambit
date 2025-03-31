@@ -92,7 +92,7 @@ export default function GamePage() {
       <Card className="w-full max-w-md border-2 border-primary/30 shadow-xl bg-card/90 backdrop-blur-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-medieval text-primary">Game Hall</CardTitle>
-          <CardDescription>Create or join a game of Court Piece</CardDescription>
+          <CardDescription>Create or join a game of Turup's Gambit</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="create" className="w-full">

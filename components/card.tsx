@@ -48,7 +48,7 @@ export function Card({ suit, value, onClick, disabled = false, is3D = false }: C
   if (is3D) {
     return (
       <motion.button
-        className={`fantasy-card w-16 h-24 flex flex-col items-center justify-center bg-white dark:bg-slate-200 ${disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"} transition-all duration-200`}
+        className={`fantasy-card w-16 h-24 flex flex-col items-center justify-center bg-gradient-to-br from-amber-900/80 to-black ${disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer"} transition-all duration-200`}
         onClick={onClick}
         disabled={disabled}
         initial={{ rotateY: 0 }}
@@ -81,7 +81,7 @@ export function Card({ suit, value, onClick, disabled = false, is3D = false }: C
 
         {isHovered && (
           <div
-            className="absolute inset-0 bg-gradient-to-tr from-primary/10 to-secondary/10 rounded-lg"
+            className="absolute inset-0 bg-gradient-to-tr from-amber-500/10 to-yellow-300/10 rounded-lg"
             style={{ transform: "translateZ(2px)" }}
           />
         )}
@@ -91,7 +91,7 @@ export function Card({ suit, value, onClick, disabled = false, is3D = false }: C
 
   return (
     <button
-      className={`fantasy-card w-16 h-24 flex flex-col items-center justify-center bg-white dark:bg-slate-200 ${disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer hover:shadow-xl"} transition-all duration-200`}
+      className={`fantasy-card w-16 h-24 flex flex-col items-center justify-center bg-gradient-to-br from-amber-900/80 to-black ${disabled ? "opacity-70 cursor-not-allowed" : "cursor-pointer hover:shadow-xl"} transition-all duration-200`}
       onClick={onClick}
       disabled={disabled}
     >

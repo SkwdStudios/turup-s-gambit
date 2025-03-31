@@ -116,6 +116,7 @@ function CardAnimation({ card, index }: { card: FlyingCardProps; index: number }
   )
 }
 
+// Update the flying card component to use the new gradient
 function FlyingCard({ suit, value }: { suit: string; value: string }) {
   const getSuitSymbol = (suit: string) => {
     switch (suit.toLowerCase()) {
@@ -149,7 +150,7 @@ function FlyingCard({ suit, value }: { suit: string; value: string }) {
   const color = getSuitColor(suit)
 
   return (
-    <div className="fantasy-card w-full h-full flex flex-col items-center justify-center bg-white dark:bg-slate-200 shadow-xl">
+    <div className="fantasy-card w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-amber-900/80 to-black shadow-xl">
       <div className="absolute top-1 left-1 flex flex-col items-center">
         <span className="text-sm font-bold">{value}</span>
         <span className={`text-sm ${color}`}>{symbol}</span>

@@ -4,65 +4,65 @@
 
 @layer base {
   :root {
-    --background: 20 36% 96%;
-    --foreground: 20 10% 5%;
+    --background: 35 30% 94%;
+    --foreground: 35 10% 10%;
 
-    --card: 24 33% 97%;
-    --card-foreground: 20 10% 5%;
+    --card: 35 25% 95%;
+    --card-foreground: 35 10% 10%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 20 10% 5%;
+    --popover: 35 25% 98%;
+    --popover-foreground: 35 10% 10%;
 
-    --primary: 28 74% 45%;
-    --primary-foreground: 60 9% 98%;
+    --primary: 35 80% 45%;
+    --primary-foreground: 35 10% 98%;
 
-    --secondary: 12 60% 40%;
-    --secondary-foreground: 60 9% 98%;
+    --secondary: 25 70% 45%;
+    --secondary-foreground: 35 10% 98%;
 
-    --muted: 20 10% 92%;
-    --muted-foreground: 20 10% 40%;
+    --muted: 35 10% 90%;
+    --muted-foreground: 35 10% 40%;
 
-    --accent: 349 89% 60%;
-    --accent-foreground: 60 9% 98%;
+    --accent: 45 90% 50%;
+    --accent-foreground: 35 10% 10%;
 
     --destructive: 0 84% 60%;
-    --destructive-foreground: 60 9% 98%;
+    --destructive-foreground: 35 10% 98%;
 
-    --border: 20 10% 86%;
-    --input: 20 10% 86%;
-    --ring: 28 74% 45%;
+    --border: 35 10% 80%;
+    --input: 35 10% 80%;
+    --ring: 35 80% 45%;
 
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 20 30% 10%;
-    --foreground: 60 9% 98%;
+    --background: 35 30% 8%;
+    --foreground: 35 10% 95%;
 
-    --card: 20 25% 15%;
-    --card-foreground: 60 9% 98%;
+    --card: 35 25% 12%;
+    --card-foreground: 35 10% 95%;
 
-    --popover: 20 25% 15%;
-    --popover-foreground: 60 9% 98%;
+    --popover: 35 25% 12%;
+    --popover-foreground: 35 10% 95%;
 
-    --primary: 28 74% 45%;
-    --primary-foreground: 60 9% 98%;
+    --primary: 35 80% 45%;
+    --primary-foreground: 35 10% 98%;
 
-    --secondary: 12 60% 40%;
-    --secondary-foreground: 60 9% 98%;
+    --secondary: 25 70% 45%;
+    --secondary-foreground: 35 10% 98%;
 
-    --muted: 20 20% 20%;
-    --muted-foreground: 20 10% 70%;
+    --muted: 35 20% 20%;
+    --muted-foreground: 35 10% 70%;
 
-    --accent: 349 89% 60%;
-    --accent-foreground: 60 9% 98%;
+    --accent: 45 90% 50%;
+    --accent-foreground: 35 10% 10%;
 
     --destructive: 0 84% 60%;
-    --destructive-foreground: 60 9% 98%;
+    --destructive-foreground: 35 10% 98%;
 
-    --border: 20 30% 25%;
-    --input: 20 30% 25%;
-    --ring: 28 74% 45%;
+    --border: 35 30% 20%;
+    --input: 35 30% 20%;
+    --ring: 35 80% 45%;
   }
 }
 
@@ -88,10 +88,25 @@
 }
 
 @layer components {
+  /* Adjust the fantasy card styling */
   .fantasy-card {
     @apply relative rounded-lg overflow-hidden border-2 border-primary/50 shadow-lg;
-    background-image: url("/assets/card-texture.png");
-    background-size: cover;
+    background-image: linear-gradient(to bottom right, #3a2a18, #1a1208);
+    position: relative;
+    transform: scale(1.05); /* Slightly increase card size */
+  }
+
+  .fantasy-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(45deg, rgba(255, 215, 0, 0.1), transparent 60%);
+    z-index: 1;
+  }
+
+  .fantasy-card > * {
+    position: relative;
+    z-index: 2;
   }
 
   .medieval-button {
@@ -170,6 +185,7 @@
     }
   }
 
+  /* Adjust the CRT flicker effect to be less intense */
   .crt-effect {
     position: fixed;
     top: 0;
@@ -178,74 +194,74 @@
     width: 100vw;
     pointer-events: none;
     z-index: 101;
-    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%); /* Reduced opacity from 0.25 to 0.15 */
     background-size: 100% 4px;
-    animation: crt-flicker 0.15s infinite;
+    animation: crt-flicker 0.3s infinite; /* Slowed down from 0.15s to 0.3s */
   }
 
   @keyframes crt-flicker {
     0% {
-      opacity: 0.17861;
+      opacity: 0.08; /* Reduced flicker intensity */
     }
     5% {
-      opacity: 0.24769;
+      opacity: 0.12;
     }
     10% {
-      opacity: 0.13604;
+      opacity: 0.06;
     }
     15% {
-      opacity: 0.70626;
+      opacity: 0.35; /* Reduced from 0.70626 */
     }
     20% {
-      opacity: 0.18128;
+      opacity: 0.09;
     }
     25% {
-      opacity: 0.63891;
+      opacity: 0.3; /* Reduced from 0.63891 */
     }
     30% {
-      opacity: 0.45583;
+      opacity: 0.22;
     }
     35% {
-      opacity: 0.47807;
+      opacity: 0.23;
     }
     40% {
-      opacity: 0.26559;
+      opacity: 0.13;
     }
     45% {
-      opacity: 0.64693;
+      opacity: 0.32; /* Reduced from 0.64693 */
     }
     50% {
-      opacity: 0.76019;
+      opacity: 0.38; /* Reduced from 0.76019 */
     }
     55% {
-      opacity: 0.08594;
+      opacity: 0.04;
     }
     60% {
-      opacity: 0.20313;
+      opacity: 0.1;
     }
     65% {
-      opacity: 0.51988;
+      opacity: 0.25;
     }
     70% {
-      opacity: 0.43455;
+      opacity: 0.21;
     }
     75% {
-      opacity: 0.37288;
+      opacity: 0.18;
     }
     80% {
-      opacity: 0.51428;
+      opacity: 0.25;
     }
     85% {
-      opacity: 0.50419;
+      opacity: 0.25;
     }
     90% {
-      opacity: 0.5003;
+      opacity: 0.25;
     }
     95% {
-      opacity: 0.36108;
+      opacity: 0.18;
     }
     100% {
-      opacity: 0.24387;
+      opacity: 0.12;
     }
   }
 
@@ -267,6 +283,29 @@
   /* 3D card effects */
   .perspective-[1000px] {
     perspective: 1000px;
+  }
+
+  /* Animation for emotes */
+  @keyframes fadeUp {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    10% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    90% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+  }
+
+  .animate-fadeUp {
+    animation: fadeUp 3s ease-in-out forwards;
   }
 }
 

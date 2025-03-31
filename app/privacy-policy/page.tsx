@@ -26,12 +26,12 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-2xl font-medieval text-secondary mb-4">Introduction</h2>
             <div className="prose prose-lg dark:prose-invert max-w-none">
               <p>
-                Welcome to Court Piece, a fantasy card game set in a medieval realm. This Privacy Policy explains how we
-                collect, use, and protect your personal information when you use our game and services.
+                Welcome to Turup's Gambit, a fantasy card game set in a medieval realm. This Privacy Policy explains how
+                we collect, use, and protect your personal information when you use our game and services.
               </p>
               <p>
-                By accessing or using Court Piece, you agree to the collection and use of information in accordance with
-                this policy. We take your privacy seriously and are committed to protecting your personal data.
+                By accessing or using Turup's Gambit, you agree to the collection and use of information in accordance
+                with this policy. We take your privacy seriously and are committed to protecting your personal data.
               </p>
             </div>
           </div>
