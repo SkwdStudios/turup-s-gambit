@@ -1,62 +1,72 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { GameModeSelector } from "@/components/game-mode-selector"
-import { VisualEffects } from "@/components/visual-effects"
-import { LoginModal } from "@/components/login-modal"
-import { useAuth } from "@/hooks/use-auth"
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { GameModeSelector } from "@/components/game-mode-selector";
+import { VisualEffects } from "@/components/visual-effects";
+import { LoginModal } from "@/components/login-modal";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function GamePage() {
-  const [roomId, setRoomId] = useState("")
-  const [gameMode, setGameMode] = useState<"classic" | "frenzy">("classic")
-  const [isCreatingGame, setIsCreatingGame] = useState(false)
-  const [isJoiningGame, setIsJoiningGame] = useState(false)
-  const [showLoginModal, setShowLoginModal] = useState(false)
-  const router = useRouter()
-  const { user } = useAuth()
+  const [roomId, setRoomId] = useState("");
+  const [gameMode, setGameMode] = useState<"classic" | "frenzy">("classic");
+  const [isCreatingGame, setIsCreatingGame] = useState(false);
+  const [isJoiningGame, setIsJoiningGame] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const router = useRouter();
+  const { user } = useAuth();
 
   // Check if user is logged in
   useEffect(() => {
     if (!user) {
-      setShowLoginModal(true)
+      setShowLoginModal(true);
     }
-  }, [user])
+  }, [user]);
 
   function handleCreateGame() {
     if (!user) {
-      setShowLoginModal(true)
-      return
+      setShowLoginModal(true);
+      return;
     }
 
-    setIsCreatingGame(true)
+    setIsCreatingGame(true);
     // Simulate API call to create game
     setTimeout(() => {
-      const newRoomId = Math.random().toString(36).substring(2, 8).toUpperCase()
-      setIsCreatingGame(false)
-      router.push(`/game/${newRoomId}?mode=${gameMode}`)
-    }, 1500)
+      const newRoomId = Math.random()
+        .toString(36)
+        .substring(2, 8)
+        .toUpperCase();
+      setIsCreatingGame(false);
+      router.push(`/game/${newRoomId}?mode=${gameMode}`);
+    }, 1500);
   }
 
   function handleJoinGame() {
     if (!user) {
-      setShowLoginModal(true)
-      return
+      setShowLoginModal(true);
+      return;
     }
 
-    if (!roomId) return
+    if (!roomId) return;
 
-    setIsJoiningGame(true)
+    setIsJoiningGame(true);
     // Simulate API call to join game
     setTimeout(() => {
-      setIsJoiningGame(false)
-      router.push(`/game/${roomId}`)
-    }, 1500)
+      setIsJoiningGame(false);
+      router.push(`/game/${roomId}`);
+    }, 1500);
   }
 
   if (!user) {
@@ -74,7 +84,7 @@ export default function GamePage() {
 
         <LoginModal isOpen={showLoginModal} onClose={() => router.push("/")} />
       </div>
-    )
+    );
   }
 
   return (
@@ -91,8 +101,12 @@ export default function GamePage() {
 
       <Card className="w-full max-w-md border-2 border-primary/30 shadow-xl bg-card/90 backdrop-blur-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-medieval text-primary">Game Hall</CardTitle>
-          <CardDescription>Create or join a game of Turup's Gambit</CardDescription>
+          <CardTitle className="text-3xl font-medieval text-primary">
+            Game Hall
+          </CardTitle>
+          <CardDescription>
+            Create or join a game of Turup's Gambit
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="create" className="w-full">
@@ -110,7 +124,9 @@ export default function GamePage() {
                 <h3 className="text-lg font-medieval mb-3">Select Game Mode</h3>
                 <GameModeSelector
                   selectedMode={gameMode}
-                  onSelectMode={(mode) => setGameMode(mode as "classic" | "frenzy")}
+                  onSelectMode={(mode) =>
+                    setGameMode(mode as "classic" | "frenzy")
+                  }
                 />
               </div>
 
@@ -149,12 +165,14 @@ export default function GamePage() {
           </Tabs>
         </CardContent>
         <CardFooter className="flex justify-center">
-          <Link href="/" className="text-sm text-muted-foreground hover:text-primary">
+          <Link
+            href="/"
+            className="text-sm text-muted-foreground hover:text-primary"
+          >
             Return to the Kingdom
           </Link>
         </CardFooter>
       </Card>
     </div>
-  )
+  );
 }
-
