@@ -73,8 +73,6 @@ function setupWebSocketServer() {
             case "room:join":
               handleRoomJoin(ws, parsedMessage.payload as JoinRoomPayload);
               break;
-            // --- Add cases for other message types ---
-            // e.g., game:ready, game:bid, game:play-card, game:select-trump
             default:
               console.log(
                 `[WSS ${PORT}] Unknown message type: ${parsedMessage.type}`
@@ -85,8 +83,6 @@ function setupWebSocketServer() {
             `[WSS ${PORT}] Failed to parse message or handle event:`,
             error
           );
-          // Optionally send error back to client
-          // ws.send(JSON.stringify({ type: 'error', payload: 'Invalid message format' }));
         }
       });
 
@@ -99,7 +95,7 @@ function setupWebSocketServer() {
           `[WSS ${PORT}] WebSocket error for client ${clients.get(ws)?.id}:`,
           error
         );
-        handleDisconnect(ws); // Treat error as disconnect
+        handleDisconnect(ws);
       });
     });
 
@@ -129,19 +125,13 @@ function broadcast(roomId: string, message: BaseMessage, sender?: WebSocket) {
   if (!roomClients) return;
 
   const messageString = JSON.stringify(message);
-  console.log(
-    `[WSS ${PORT}] Broadcasting type ${message.type} to room ${roomId}`
-  );
+  console.log(`[WSS] Broadcasting type ${message.type} to room ${roomId}`);
   roomClients.forEach((client, id) => {
-    // Send to all clients in the room except the sender, if specified
     if (client !== sender && client.readyState === WebSocket.OPEN) {
       try {
         client.send(messageString);
       } catch (e) {
-        console.error(
-          `[WSS ${PORT}] Failed to send message to client ${id}`,
-          e
-        );
+        console.error(`[WSS] Failed to send message to client ${id}`, e);
       }
     }
   });
@@ -153,13 +143,11 @@ function sendToClient(ws: WebSocket, message: BaseMessage) {
     try {
       ws.send(JSON.stringify(message));
       console.log(
-        `[WSS ${PORT}] Sent type ${message.type} to client ${
-          clients.get(ws)?.id
-        }`
+        `[WSS] Sent type ${message.type} to client ${clients.get(ws)?.id}`
       );
     } catch (e) {
       console.error(
-        `[WSS ${PORT}] Failed to send message to client ${clients.get(ws)?.id}`,
+        `[WSS] Failed to send message to client ${clients.get(ws)?.id}`,
         e
       );
     }
@@ -170,66 +158,58 @@ function sendToClient(ws: WebSocket, message: BaseMessage) {
 function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
   const { roomId, playerName } = payload;
   const clientInfo = clients.get(ws);
-  if (!clientInfo || !roomId || !playerName) return; // Basic validation
+  if (!clientInfo || !roomId || !playerName) return;
 
   console.log(
-    `[WSS ${PORT}] Join logic: ${playerName} (${clientInfo.id}) joining ${roomId}`
+    `[WSS] Join logic: ${playerName} (${clientInfo.id}) joining ${roomId}`
   );
 
-  // Remove from previous room if any
   if (clientInfo.roomId) {
-    handleDisconnect(ws); // Reuse disconnect logic to clean up old room
+    handleDisconnect(ws);
   }
 
   clientInfo.name = playerName;
   clientInfo.roomId = roomId;
 
-  // Add to new room
   if (!rooms.has(roomId)) {
     rooms.set(roomId, new Map());
   }
   rooms.get(roomId)?.set(clientInfo.id, ws);
   console.log(
-    `[WSS ${PORT}] Client ${
+    `[WSS] Client ${
       clientInfo.id
     } added to room map for ${roomId}. Current room clients: ${
       rooms.get(roomId)?.size
     }`
   );
 
-  // --- Integrate with GameManager (replace Socket.IO logic) ---
-  // This part needs careful mapping from ws concepts to your GameManager
   let roomState: GameRoom;
   try {
     const existingRoom = gameManager.getRoom(roomId);
     if (existingRoom && existingRoom.players.length >= 4) {
       console.warn(
-        `[WSS ${PORT}] Room ${roomId} is full in GameManager. Rejecting join.`
+        `[WSS] Room ${roomId} is full in GameManager. Rejecting join.`
       );
       sendToClient(ws, { type: "error", payload: `Room ${roomId} is full.` });
-      // Clean up the client maps as well
       rooms.get(roomId)?.delete(clientInfo.id);
       if (rooms.get(roomId)?.size === 0) rooms.delete(roomId);
-      clients.delete(ws); // Or reset clientInfo.roomId
-      ws.close(); // Close the connection
+      clients.delete(ws);
+      ws.close();
       return;
     }
 
-    roomState = existingRoom || gameManager.findOrCreateRoom(roomId); // Or findOrCreateRoom()
-    // Important: GameManager needs adapting. It likely expects socket IDs.
-    // We might need to pass clientInfo.id instead of a socket object.
+    roomState = existingRoom || gameManager.findOrCreateRoom(roomId);
     const gamePlayer = gameManager.addPlayerToRoom(
       roomState.id,
       playerName,
       clientInfo.id
-    ); // Use our generated ID
-    // No need to store ws instance in gameManager
+    );
     console.log(
-      `[WSS ${PORT}] Player ${playerName} added to GameManager for room ${roomState.id}`
+      `[WSS] Player ${playerName} added to GameManager for room ${roomState.id}`
     );
   } catch (error) {
     console.error(
-      `[WSS ${PORT}] Error interacting with GameManager during join:`,
+      `[WSS] Error interacting with GameManager during join:`,
       error
     );
     sendToClient(ws, {
@@ -237,7 +217,6 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
       payload:
         error instanceof Error ? error.message : "Failed to join game room.",
     });
-    // Clean up client maps on error
     rooms.get(roomId)?.delete(clientInfo.id);
     if (rooms.get(roomId)?.size === 0) rooms.delete(roomId);
     clients.delete(ws);
@@ -245,13 +224,10 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
     return;
   }
 
-  // Send confirmation to joining client
   const updatedRoomState = gameManager.getRoom(roomState.id);
   if (updatedRoomState) {
     sendToClient(ws, { type: "room:joined", payload: updatedRoomState });
-
-    // Broadcast update to others in the room
-    broadcast(roomId, { type: "room:updated", payload: updatedRoomState }, ws); // Send updated state
+    broadcast(roomId, { type: "room:updated", payload: updatedRoomState }, ws);
     broadcast(
       roomId,
       {
@@ -261,11 +237,9 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
       ws
     );
 
-    // Check if game should start
     if (updatedRoomState.players.length === 4) {
-      console.log(`[WSS ${PORT}] Room ${roomId} is full, starting game`);
+      console.log(`[WSS] Room ${roomId} is full, starting game`);
       gameManager.startGame(roomState.id);
-      // Need fresh state again after starting
       const finalRoomState = gameManager.getRoom(roomState.id);
       if (finalRoomState) {
         broadcast(roomId, { type: "game:started", payload: finalRoomState });
@@ -277,9 +251,8 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
     }
   } else {
     console.error(
-      `[WSS ${PORT}] Room ${roomState.id} not found in GameManager after updates!`
+      `[WSS] Room ${roomState.id} not found in GameManager after updates!`
     );
-    // Handle this inconsistency
   }
 }
 
@@ -289,61 +262,50 @@ function handleDisconnect(ws: WebSocket) {
   if (!clientInfo) return;
 
   console.log(
-    `[WSS ${PORT}] Client disconnected: ${clientInfo.id} (Name: ${clientInfo.name})`
+    `[WSS] Client disconnected: ${clientInfo.id} (Name: ${clientInfo.name})`
   );
 
   const { roomId, id: clientId } = clientInfo;
 
-  // Remove from room map
   if (roomId && rooms.has(roomId)) {
     rooms.get(roomId)?.delete(clientId);
-    console.log(
-      `[WSS ${PORT}] Client ${clientId} removed from room map for ${roomId}`
-    );
+    console.log(`[WSS] Client ${clientId} removed from room map for ${roomId}`);
     if (rooms.get(roomId)?.size === 0) {
-      console.log(
-        `[WSS ${PORT}] Room ${roomId} is now empty, removing room map.`
-      );
+      console.log(`[WSS] Room ${roomId} is now empty, removing room map.`);
       rooms.delete(roomId);
-      // Optionally also remove from GameManager if empty
-      // gameManager.removeRoomIfEmpty(roomId);
     }
   }
 
-  // Remove from global client map
   clients.delete(ws);
 
-  // --- Notify GameManager and other players ---
   if (roomId) {
     try {
       gameManager.removePlayerFromRoom(roomId, clientId);
       console.log(
-        `[WSS ${PORT}] Player ${clientId} removed from GameManager room ${roomId}`
+        `[WSS] Player ${clientId} removed from GameManager room ${roomId}`
       );
       const updatedRoomState = gameManager.getRoom(roomId);
       if (updatedRoomState) {
-        // Room might cease to exist if last player
         broadcast(roomId, { type: "player:left", payload: clientId });
         broadcast(roomId, { type: "room:updated", payload: updatedRoomState });
       }
     } catch (error) {
       console.error(
-        `[WSS ${PORT}] Error removing player ${clientId} from GameManager room ${roomId}:`,
+        `[WSS] Error removing player ${clientId} from GameManager room ${roomId}:`,
         error
       );
     }
   }
 }
 
-// API Route to trigger the setup
 export async function GET(req: Request) {
   console.log(
     `[API Route /api/socket] Received ${req.method} request. Triggering setup if needed.`
   );
-  if (!global.httpServer || !global.wss) {
-    // Check wss too
+
+  if (!global.wss) {
     console.log(
-      "[API Route /api/socket] WebSocket server not found or WSS missing, attempting setup..."
+      "[API Route /api/socket] WebSocket server not found, attempting setup..."
     );
     setupWebSocketServer();
   } else {
@@ -351,17 +313,30 @@ export async function GET(req: Request) {
       "[API Route /api/socket] WebSocket server already running globally."
     );
   }
-  return new NextResponse(
-    "WebSocket server setup process triggered (check server logs and connect to port 3001)",
-    {
-      status: 200,
-    }
-  );
+
+  return new NextResponse("WebSocket server setup process triggered", {
+    status: 200,
+  });
 }
 
-// Cleanup Interval (Optional)
-// setInterval(() => {
-//   console.log("Running stale room cleanup...");
-//   // You might need to adapt gameManager's cleanup or implement one based on the 'rooms' map
-//   // gameManager.cleanupStaleRooms();
-// }, 30 * 60 * 1000);
+export async function POST(req: Request) {
+  if (!global.wss) {
+    return new NextResponse("WebSocket server not initialized", {
+      status: 500,
+    });
+  }
+
+  const { socket, response } = await new Promise<{
+    socket: any;
+    response: any;
+  }>((resolve) => {
+    global.wss?.handleUpgrade(req, req.socket, Buffer.alloc(0), (ws) => {
+      resolve({
+        socket: ws,
+        response: new NextResponse(null, { status: 101 }),
+      });
+    });
+  });
+
+  return response;
+}

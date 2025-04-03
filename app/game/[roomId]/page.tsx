@@ -14,14 +14,22 @@ import { useAuth } from "@/hooks/use-auth";
 import { LoginModal } from "@/components/login-modal";
 import { Share } from "lucide-react";
 import { GameRoom, GameState, Card, Suit, Player } from "@/app/types/game";
+import { ProtectedRoute } from "@/components/protected-route";
+import { GameControls } from "@/components/game-controls";
+import { GameInfo } from "@/components/game-info";
 
 interface BaseMessage {
   type: string;
   payload?: any;
 }
 
-export default function GameRoomPage() {
-  const params = useParams();
+interface GameRoomPageProps {
+  params: {
+    roomId: string;
+  };
+}
+
+export default function GameRoomPage({ params }: GameRoomPageProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const roomId = params?.roomId as string;
@@ -78,7 +86,7 @@ export default function GameRoomPage() {
       .then(() => {
         const wsProto =
           window.location.protocol === "https:" ? "wss://" : "ws://";
-        const wsUrl = `${wsProto}localhost:3001/api/socket`;
+        const wsUrl = `${wsProto}${window.location.hostname}:3001/api/socket`;
 
         console.log(`[WS Client] Attempting to connect to ${wsUrl}`);
         ws.current = new WebSocket(wsUrl);
@@ -280,149 +288,26 @@ export default function GameRoomPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col pt-16 pb-16">
-      <VisualEffects enableGrain />
-      <div className="absolute inset-0 -z-10">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-40 dark:opacity-30"
-          style={{ backgroundImage: "url('/assets/game-table-bg.jpg')" }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background" />
-      </div>
-
-      <header className="border-b border-border/50 bg-card/50 backdrop-blur-sm py-2">
-        <div className="container mx-auto flex justify-between items-center px-4">
-          <div className="flex items-center gap-4">
-            <div className="bg-card/80 backdrop-blur-sm px-3 py-1 rounded-md border border-primary/30">
-              <span className="text-sm font-medieval">Room: {roomId}</span>
-            </div>
-            <div className="bg-card/80 backdrop-blur-sm px-3 py-1 rounded-md border border-primary/30">
-              <span className="text-sm font-medieval">
-                Mode: {mode === "classic" ? "Classic" : "Frenzy"}
-              </span>
-            </div>
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="medieval-button flex items-center gap-2"
-            onClick={handleShareGame}
-          >
-            <Share size={16} />
-            <span className="hidden sm:inline">Share Game</span>
-          </Button>
-        </div>
-      </header>
-
-      <main className="flex-1 container mx-auto p-4">
-        {showReplay ? (
-          <div className="max-w-5xl mx-auto">
-            <ReplaySummary
-              onClose={handleCloseReplay}
-              replayData={getReplayData()}
+    <ProtectedRoute>
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            <GameBoard 
+              roomId={roomId}
+              gameMode={mode as "classic" | "frenzy"}
+              players={players}
+              gameState={gameState}
+              onUpdateGameState={updateGameState}
+              onPlayCard={handlePlayCard}
+              onBid={handleBid}
             />
           </div>
-        ) : (
-          <div className="relative max-w-5xl mx-auto">
-            {showShuffleAnimation && <CardShuffleAnimation />}
-
-            {gameStatus === "waiting" && (
-              <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                <h2 className="text-3xl font-medieval text-primary mb-6">
-                  Waiting for Players
-                </h2>
-                <div className="mb-8">
-                  <p className="text-lg mb-4">
-                    Players in the room ({players.length}/4):
-                  </p>
-                  <ul className="space-y-2">
-                    {players.map((player: string, index: number) => (
-                      <li key={index} className="text-foreground/80">
-                        {player}
-                      </li>
-                    ))}
-                    {Array.from({ length: 4 - players.length }).map(
-                      (_, index) => (
-                        <li
-                          key={`empty-${index}`}
-                          className="text-muted-foreground"
-                        >
-                          Waiting for player...
-                        </li>
-                      )
-                    )}
-                  </ul>
-                </div>
-
-                <Button
-                  className="medieval-button bg-primary hover:bg-primary/90 text-primary-foreground"
-                  disabled={players.length < 4 || !isConnected}
-                  onClick={handleStartGame}
-                >
-                  {players.length < 4
-                    ? "Waiting for more players..."
-                    : "Start Game"}
-                </Button>
-              </div>
-            )}
-
-            {gameStatus === "bidding" && (
-              <div className="h-full flex flex-col items-center justify-center p-8">
-                <h2 className="text-3xl font-medieval text-primary mb-6">
-                  Trump Suit Bidding
-                </h2>
-                <TrumpBidding
-                  onVote={handleTrumpVote}
-                  userVote={userVote}
-                  votes={trumpVotes}
-                  votingComplete={votingComplete}
-                />
-              </div>
-            )}
-
-            {(gameStatus === "playing" || gameStatus === "ended") && (
-              <GameBoard
-                gameMode={mode as "classic" | "frenzy"}
-                players={players}
-                gameState={gameState}
-                onUpdateGameState={updateGameState}
-                onRecordMove={recordMove}
-                gameStatus={gameStatus}
-                initialCardsDeal={initialCardsDeal}
-                onPlayCard={handlePlayCard}
-                onBid={handleBid}
-              />
-            )}
-
-            {gameStatus === "ended" && (
-              <div className="mt-6 p-6 border-2 border-primary/30 rounded-lg bg-card/80 backdrop-blur-sm text-center">
-                <h2 className="text-3xl font-medieval text-primary mb-4">
-                  Game Over
-                </h2>
-                <p className="text-lg mb-6">
-                  Congratulations! Your team has won the game.
-                </p>
-                <div className="flex flex-wrap justify-center gap-4">
-                  <Button
-                    className="medieval-button bg-primary hover:bg-primary/90 text-primary-foreground"
-                    onClick={handleViewReplay}
-                  >
-                    View Replay
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="medieval-button"
-                    onClick={() => router.push("/game")}
-                  >
-                    New Game
-                  </Button>
-                </div>
-              </div>
-            )}
+          <div className="space-y-8">
+            <GameInfo roomId={roomId} />
+            <GameControls roomId={roomId} />
           </div>
-        )}
-      </main>
-    </div>
+        </div>
+      </div>
+    </ProtectedRoute>
   );
 }

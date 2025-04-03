@@ -1,81 +1,81 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
-import { Volume2, VolumeX, Play, Pause, Music } from "lucide-react"
+import { useState, useEffect, useRef } from "react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Volume2, VolumeX, Play, Pause, Music } from "lucide-react";
 
 interface AudioPlayerProps {
-  autoPlay?: boolean
+  autoPlay?: boolean;
 }
 
 export function AudioPlayer({ autoPlay = false }: AudioPlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [volume, setVolume] = useState(0.5)
-  const [isMuted, setIsMuted] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(true)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.5);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     // Create audio element
-    audioRef.current = new Audio("/assets/medieval-music.mp3")
-    audioRef.current.loop = true
-    audioRef.current.volume = volume
+    audioRef.current = new Audio("/assets/music/the_noble_land.mp3");
+    audioRef.current.loop = true;
+    audioRef.current.volume = volume;
 
     // Auto play if enabled
     if (autoPlay) {
-      const playPromise = audioRef.current.play()
+      const playPromise = audioRef.current.play();
 
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            setIsPlaying(true)
+            setIsPlaying(true);
           })
           .catch((error) => {
             // Auto-play was prevented
-            console.log("Autoplay prevented:", error)
-            setIsPlaying(false)
-          })
+            console.log("Autoplay prevented:", error);
+            setIsPlaying(false);
+          });
       }
     }
 
     // Clean up
     return () => {
       if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current = null
+        audioRef.current.pause();
+        audioRef.current = null;
       }
-    }
-  }, [autoPlay])
+    };
+  }, [autoPlay]);
 
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = isMuted ? 0 : volume
+      audioRef.current.volume = isMuted ? 0 : volume;
     }
-  }, [volume, isMuted])
+  }, [volume, isMuted]);
 
   const togglePlay = () => {
     if (audioRef.current) {
       if (isPlaying) {
-        audioRef.current.pause()
+        audioRef.current.pause();
       } else {
-        audioRef.current.play()
+        audioRef.current.play();
       }
-      setIsPlaying(!isPlaying)
+      setIsPlaying(!isPlaying);
     }
-  }
+  };
 
   const toggleMute = () => {
-    setIsMuted(!isMuted)
-  }
+    setIsMuted(!isMuted);
+  };
 
   const handleVolumeChange = (value: number[]) => {
-    setVolume(value[0])
-  }
+    setVolume(value[0]);
+  };
 
   const toggleMinimize = () => {
-    setIsMinimized(!isMinimized)
-  }
+    setIsMinimized(!isMinimized);
+  };
 
   return (
     <div
@@ -83,13 +83,23 @@ export function AudioPlayer({ autoPlay = false }: AudioPlayerProps) {
         isMinimized ? "w-auto" : "w-auto sm:w-64"
       }`}
     >
-      <Button variant="ghost" size="icon" className="rounded-full" onClick={togglePlay}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded-full"
+        onClick={togglePlay}
+      >
         {isPlaying ? <Pause size={18} /> : <Play size={18} />}
       </Button>
 
       {!isMinimized && (
         <div className="flex items-center gap-2 w-full">
-          <Button variant="ghost" size="icon" className="rounded-full" onClick={toggleMute}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onClick={toggleMute}
+          >
             {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </Button>
           <Slider
@@ -102,10 +112,14 @@ export function AudioPlayer({ autoPlay = false }: AudioPlayerProps) {
         </div>
       )}
 
-      <Button variant="ghost" size="icon" className="rounded-full" onClick={toggleMinimize}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="rounded-full"
+        onClick={toggleMinimize}
+      >
         <Music size={18} />
       </Button>
     </div>
-  )
+  );
 }
-

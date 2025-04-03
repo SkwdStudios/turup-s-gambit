@@ -6,6 +6,7 @@ import { TurnTimer } from "@/components/turn-timer";
 import { InGameEmotes } from "@/components/in-game-emotes";
 import type { GameState } from "@/hooks/use-game-state";
 import type { Card as CardType } from "@/app/types/game";
+import { useWebSocket } from "@/hooks/use-websocket";
 
 interface GameBoardProps {
   gameMode: "classic" | "frenzy";
@@ -17,6 +18,7 @@ interface GameBoardProps {
   initialCardsDeal?: boolean;
   onPlayCard?: (card: CardType) => void;
   onBid?: (bid: number) => void;
+  roomId: string;
 }
 
 export function GameBoard({
@@ -29,6 +31,7 @@ export function GameBoard({
   initialCardsDeal = false,
   onPlayCard,
   onBid,
+  roomId,
 }: GameBoardProps) {
   const [selectedCard, setSelectedCard] = useState<number | null>(null);
   const [centerCards, setCenterCards] = useState<
@@ -39,6 +42,8 @@ export function GameBoard({
   const [emotes, setEmotes] = useState<
     Array<{ id: number; emoji: string; player: string; timestamp: number }>
   >([]);
+  const [localGameState, setLocalGameState] = useState<GameState | null>(null);
+  const { sendMessage, isConnected } = useWebSocket();
 
   // Mock player hands - full deck and initial 5 cards
   const fullPlayerHand = [
@@ -161,8 +166,8 @@ export function GameBoard({
         // Update scores
         onUpdateGameState({
           scores: {
-            ...gameState.scores,
-            [winningPlayer]: (gameState.scores[winningPlayer] || 0) + 1,
+            ...gameState?.scores,
+            [winningPlayer]: (gameState?.scores[winningPlayer] || 0) + 1,
           },
         });
 
@@ -173,7 +178,13 @@ export function GameBoard({
 
       return () => clearTimeout(timer);
     }
-  }, [centerCards, players, gameState.scores, onUpdateGameState, onRecordMove]);
+  }, [
+    centerCards,
+    players,
+    gameState?.scores,
+    onUpdateGameState,
+    onRecordMove,
+  ]);
 
   const handleCardClick = (cardId: number) => {
     if (gameStatus !== "playing" || currentPlayerIndex !== 0) return;
@@ -240,6 +251,15 @@ export function GameBoard({
     }
   }, [emotes]);
 
+  useEffect(() => {
+    if (isConnected) {
+      sendMessage({
+        type: "join",
+        roomId,
+      });
+    }
+  }, [isConnected, roomId, sendMessage]);
+
   return (
     <div className="relative h-full min-h-[700px] border-2 border-primary/30 rounded-lg bg-card/80 backdrop-blur-sm p-6">
       {/* Turn timer */}
@@ -256,11 +276,11 @@ export function GameBoard({
       <div className="absolute top-6 left-6 bg-card p-2 rounded-lg border border-border/50">
         <p className="text-sm text-muted-foreground">Trump:</p>
         <p className="font-medieval text-lg text-primary">
-          {gameState.trumpSuit === "hearts" && "♥ Hearts"}
-          {gameState.trumpSuit === "diamonds" && "♦ Diamonds"}
-          {gameState.trumpSuit === "clubs" && "♣ Clubs"}
-          {gameState.trumpSuit === "spades" && "♠ Spades"}
-          {!gameState.trumpSuit && "♥ Hearts"}
+          {gameState?.trumpSuit === "hearts" && "♥ Hearts"}
+          {gameState?.trumpSuit === "diamonds" && "♦ Diamonds"}
+          {gameState?.trumpSuit === "clubs" && "♣ Clubs"}
+          {gameState?.trumpSuit === "spades" && "♠ Spades"}
+          {!gameState?.trumpSuit && "♥ Hearts"}
         </p>
       </div>
 
@@ -269,11 +289,11 @@ export function GameBoard({
         <p className="text-sm text-muted-foreground">Score:</p>
         <p className="font-medieval text-lg">
           Team 1:{" "}
-          {(gameState.scores[players[0]] || 0) +
-            (gameState.scores[players[2]] || 0)}{" "}
+          {(gameState?.scores[players[0]] || 0) +
+            (gameState?.scores[players[2]] || 0)}{" "}
           | Team 2:{" "}
-          {(gameState.scores[players[1]] || 0) +
-            (gameState.scores[players[3]] || 0)}
+          {(gameState?.scores[players[1]] || 0) +
+            (gameState?.scores[players[3]] || 0)}
         </p>
       </div>
 
@@ -297,7 +317,7 @@ export function GameBoard({
         <div className="flex items-center gap-2 justify-center mb-2">
           <p className="text-sm">{players[2] || "Opponent"}</p>
           <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState.scores[players[2]] || 0}
+            {gameState?.scores[players[2]] || 0}
           </div>
         </div>
         <div className="flex justify-center gap-1">
@@ -315,7 +335,7 @@ export function GameBoard({
         <div className="flex items-center gap-2 justify-center mb-2">
           <p className="text-sm">{players[1] || "Opponent"}</p>
           <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState.scores[players[1]] || 0}
+            {gameState?.scores[players[1]] || 0}
           </div>
         </div>
         <div className="flex flex-col gap-1">
@@ -333,7 +353,7 @@ export function GameBoard({
         <div className="flex items-center gap-2 justify-center mb-2">
           <p className="text-sm">{players[3] || "Opponent"}</p>
           <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState.scores[players[3]] || 0}
+            {gameState?.scores[players[3]] || 0}
           </div>
         </div>
         <div className="flex flex-col gap-1">
@@ -424,7 +444,7 @@ export function GameBoard({
         <div className="flex items-center gap-2 justify-center mb-2">
           <p className="text-sm">{players[0] || "You"}</p>
           <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState.scores[players[0]] || 0}
+            {gameState?.scores[players[0]] || 0}
           </div>
         </div>
         <div className="flex justify-center">

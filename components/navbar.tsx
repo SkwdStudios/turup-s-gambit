@@ -1,37 +1,38 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
-import { useRouter, usePathname } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { User, Info, LogIn, LogOut, Menu, X, Music } from "lucide-react"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { LoginModal } from "@/components/login-modal"
-import { useAuth } from "@/hooks/use-auth"
-import { MusicControls } from "@/components/music-controls"
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter, usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { User, Info, LogIn, LogOut, Menu, X, Music } from "lucide-react";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { LoginModal } from "@/components/login-modal";
+import { useAuth } from "@/hooks/use-auth";
+import { MusicControls } from "@/components/music-controls";
+import Image from "next/image";
 
 export function Navbar() {
-  const [showLoginModal, setShowLoginModal] = useState(false)
-  const [showMusicControls, setShowMusicControls] = useState(false)
-  const router = useRouter()
-  const pathname = usePathname()
-  const { user, logout } = useAuth()
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showMusicControls, setShowMusicControls] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user, logout } = useAuth();
 
   const handleNavigation = (path: string) => {
     if (!user && (path === "/profile" || path === "/game")) {
-      setShowLoginModal(true)
-      return
+      setShowLoginModal(true);
+      return;
     }
-    router.push(path)
-  }
+    router.push(path);
+  };
 
   const handleLogout = () => {
-    logout()
+    logout();
     if (pathname === "/profile" || pathname === "/game") {
-      router.push("/")
+      router.push("/");
     }
-  }
+  };
 
   return (
     <>
@@ -40,7 +41,16 @@ export function Navbar() {
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center">
               <Link href="/" className="flex items-center gap-2">
-                <span className="text-2xl font-medieval text-primary">Turup's Gambit</span>
+                <Image
+                  src="/logo.svg"
+                  alt="Turup's Gambit Logo"
+                  width={48}
+                  height={48}
+                  className="[&>path]:fill-primary"
+                />
+                <span className="text-2xl font-medieval text-primary">
+                  Turup's Gambit
+                </span>
               </Link>
             </div>
 
@@ -52,7 +62,10 @@ export function Navbar() {
                 className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                 onClick={() => handleNavigation("/about")}
               >
-                <Info size={18} className="transition-transform duration-300 hover:scale-110" />
+                <Info
+                  size={18}
+                  className="transition-transform duration-300 hover:scale-110"
+                />
                 <span>About</span>
               </Button>
               <Button
@@ -61,7 +74,10 @@ export function Navbar() {
                 className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                 onClick={() => setShowMusicControls(!showMusicControls)}
               >
-                <Music size={18} className="transition-transform duration-300 hover:scale-110" />
+                <Music
+                  size={18}
+                  className="transition-transform duration-300 hover:scale-110"
+                />
                 <span>Music</span>
               </Button>
 
@@ -74,12 +90,17 @@ export function Navbar() {
                     onClick={() => handleNavigation("/profile")}
                   >
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={user.avatar || ""} alt={user.username} />
+                      <AvatarImage
+                        src={user.image || user.avatar || ""}
+                        alt={user.name || user.username}
+                      />
                       <AvatarFallback className="bg-primary/20 text-primary">
-                        {user.username.charAt(0).toUpperCase()}
+                        {(user.name || user.username).charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="hidden lg:inline">{user.username}</span>
+                    <span className="hidden lg:inline">
+                      {user.name || user.username}
+                    </span>
                   </Button>
                   <Button
                     variant="outline"
@@ -118,7 +139,10 @@ export function Navbar() {
                     className="flex items-center justify-start gap-2 text-foreground hover:text-primary transition-colors"
                     onClick={() => handleNavigation("/about")}
                   >
-                    <Info size={18} className="transition-transform duration-300 hover:scale-110" />
+                    <Info
+                      size={18}
+                      className="transition-transform duration-300 hover:scale-110"
+                    />
                     <span>About</span>
                   </Button>
                   <Button
@@ -126,7 +150,10 @@ export function Navbar() {
                     className="flex items-center justify-start gap-2 text-foreground hover:text-primary transition-colors"
                     onClick={() => setShowMusicControls(!showMusicControls)}
                   >
-                    <Music size={18} className="transition-transform duration-300 hover:scale-110" />
+                    <Music
+                      size={18}
+                      className="transition-transform duration-300 hover:scale-110"
+                    />
                     <span>Music</span>
                   </Button>
 
@@ -171,7 +198,11 @@ export function Navbar() {
         <div className="fixed top-20 right-4 z-50 p-4 rounded-lg bg-card/90 backdrop-blur-md border border-primary/20 shadow-xl">
           <div className="flex justify-between items-center mb-2">
             <h3 className="font-medieval text-primary">Music Controls</h3>
-            <Button variant="ghost" size="icon" onClick={() => setShowMusicControls(false)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowMusicControls(false)}
+            >
               <X size={18} />
             </Button>
           </div>
@@ -180,8 +211,10 @@ export function Navbar() {
       )}
 
       {/* Login Modal */}
-      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+      <LoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+      />
     </>
-  )
+  );
 }
-
