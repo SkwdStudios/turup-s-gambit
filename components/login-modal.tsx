@@ -94,7 +94,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     try {
       await signIn("anonymous", {
         username: values.username,
-        redirect: false,
+        redirectTo: "/",
       });
       onClose();
       router.refresh();
@@ -111,10 +111,9 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
     try {
       console.log(`Attempting to login with ${provider}...`);
-      const result = await signIn(provider, {
-        redirect: true,
-        callbackUrl: "/",
-      });
+      const result = await signIn(provider, { redirectTo: "/" });
+
+      console.log(result);
 
       if (result?.error) {
         throw new Error(result.error);

@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -23,9 +23,16 @@ export default function ProfilePage() {
   const { user: authUser } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
-    username: authUser?.name || authUser?.username || "",
+    username: authUser?.username || authUser?.name || "",
     email: authUser?.email || "",
   });
+
+  // Debug logging
+  useEffect(() => {
+    if (authUser) {
+      console.log("Profile page user data:", authUser);
+    }
+  }, [authUser]);
 
   // Mock game stats (you can replace this with real data from your backend)
   const gameStats = {
@@ -89,11 +96,11 @@ export default function ProfilePage() {
             <div className="relative">
               <Avatar className="w-32 h-32 border-4 border-primary">
                 <AvatarImage
-                  src={authUser.image || authUser.avatar}
-                  alt={authUser.name || authUser.username}
+                  src={authUser.avatar || authUser.image || `/placeholder.svg?height=200&width=200&text=${(authUser.username || authUser.name || 'U').charAt(0)}`}
+                  alt={authUser.username || authUser.name || 'User'}
                 />
                 <AvatarFallback className="text-4xl font-medieval">
-                  {(authUser.name || authUser.username).charAt(0)}
+                  {(authUser.username || authUser.name || 'U').charAt(0)}
                 </AvatarFallback>
               </Avatar>
               <div className="absolute -bottom-2 -right-2 bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full font-medieval">

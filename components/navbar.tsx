@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,12 @@ export function Navbar() {
   const [showMusicControls, setShowMusicControls] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
+
+  // Debug logging
+  useEffect(() => {
+    console.log("Auth status:", { isAuthenticated, user });
+  }, [isAuthenticated, user]);
 
   const handleNavigation = (path: string) => {
     if (!user && (path === "/profile" || path === "/game")) {
@@ -33,6 +38,11 @@ export function Navbar() {
       router.push("/");
     }
   };
+
+  // Get user display name and avatar
+  const displayName = user?.discordUsername || user?.username || "User";
+  const avatarUrl =
+    user?.discordAvatar || user?.avatar || "/default-avatar.png";
 
   return (
     <>
@@ -90,17 +100,12 @@ export function Navbar() {
                     onClick={() => handleNavigation("/profile")}
                   >
                     <Avatar className="h-8 w-8">
-                      <AvatarImage
-                        src={user.image || user.avatar || ""}
-                        alt={user.name || user.username}
-                      />
+                      <AvatarImage src={avatarUrl} alt={displayName} />
                       <AvatarFallback className="bg-primary/20 text-primary">
-                        {(user.name || user.username).charAt(0).toUpperCase()}
+                        {displayName.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="hidden lg:inline">
-                      {user.name || user.username}
-                    </span>
+                    <span className="hidden lg:inline">{displayName}</span>
                   </Button>
                   <Button
                     variant="outline"

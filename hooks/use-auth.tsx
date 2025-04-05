@@ -1,6 +1,6 @@
 "use client";
 
-import {
+import React, {
   createContext,
   useContext,
   useState,
@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { db } from "../lib/db";
+import { useSession, signOut } from "next-auth/react";
 
 export interface User {
   id: string;
@@ -24,7 +24,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  isAuthenticated: boolean;
   loginAnonymously: (username: string) => Promise<void>;
   logout: () => void;
 }
@@ -33,115 +33,133 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const { data: session, status } = useSession();
+  const isLoading = status === "loading";
 
-  // Import the AuthSync component at the top level component
   const AuthSyncComponent = dynamic(
-    () => import("@/components/auth-sync").then((mod) => mod.AuthSync),
+    () => import("../components/auth-sync").then((mod) => mod.AuthSync),
     {
       ssr: false,
     }
   );
 
-  // Check for existing session on mount
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        // In a real app, this would be an API call to validate the session
-        const storedUser = localStorage.getItem("courtPieceUser");
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
-        }
-      } catch (error) {
-        console.error("Auth check failed:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    console.log(
+      "[useAuth] AuthProvider effect running. Auth.js status:",
+      status
+    );
 
-    checkAuth();
-  }, []);
-
-  const login = async (email: string, password: string) => {
-    setIsLoading(true);
-    try {
-      // In a real app, this would be an API call to your auth endpoint
-      // Simulate API call and database query
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Find user in "database"
-      const user = await db.users.findByEmail(email);
-
-      if (!user || user.password !== password) {
-        throw new Error("Invalid credentials");
-      }
-
+    if (status === "authenticated" && session?.user) {
+      console.log(
+        "[useAuth] Auth.js status is 'authenticated'. Full session object:",
+        JSON.stringify(session, null, 2)
+      );
+      const sessionUser = session.user as any;
       const authUser: User = {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        avatar: user.avatar,
+        id: sessionUser.id || sessionUser.sub || "",
+        username:
+          sessionUser.username ||
+          sessionUser.name ||
+          sessionUser.email?.split("@")[0] ||
+          "User",
+        email: sessionUser.email || undefined,
+        avatar: sessionUser.image || sessionUser.avatar || undefined,
         isAnonymous: false,
-        name: user.username,
-        image: user.avatar,
+        name: sessionUser.name || sessionUser.username || undefined,
+        image: sessionUser.image || sessionUser.avatar || undefined,
+        ...sessionUser,
       };
-
-      // Store user in localStorage (in a real app, this would be a secure HTTP-only cookie)
-      localStorage.setItem("courtPieceUser", JSON.stringify(authUser));
       setUser(authUser);
-    } catch (error) {
-      console.error("Login failed:", error);
-      throw error;
-    } finally {
-      setIsLoading(false);
+      localStorage.removeItem("courtPieceUser");
+    } else if (status === "unauthenticated") {
+      console.log("[useAuth] Auth.js session unauthenticated.");
+      const storedUser = localStorage.getItem("courtPieceUser");
+      if (storedUser) {
+        try {
+          const parsedUser: User = JSON.parse(storedUser);
+          if (parsedUser && parsedUser.id && parsedUser.isAnonymous) {
+            console.log(
+              "[useAuth] Using anonymous user from localStorage:",
+              parsedUser
+            );
+            setUser(parsedUser);
+          } else {
+            console.log(
+              "[useAuth] Removing non-anonymous/invalid user from localStorage."
+            );
+            localStorage.removeItem("courtPieceUser");
+            setUser(null);
+          }
+        } catch (error) {
+          console.error("[useAuth] Error parsing localStorage user:", error);
+          localStorage.removeItem("courtPieceUser");
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
     }
-  };
+  }, [session, status]);
 
   const loginAnonymously = async (username: string) => {
-    setIsLoading(true);
     try {
-      // In a real app, this would be an API call to your auth endpoint
-      // Simulate API call and database query
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Check if username exists
-      const exists = await db.users.usernameExists(username);
-      if (exists) {
-        throw new Error("Username already exists");
+      if (status === "authenticated") {
+        console.warn("[useAuth] Cannot login anonymously while authenticated.");
+        return;
       }
 
-      // Create anonymous user
-      const newUser = await db.users.createAnonymous(username);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const anonId = `anon_${Date.now()}`;
+      const avatarPlaceholder = `/placeholder.svg?height=32&width=32&text=${username
+        .charAt(0)
+        .toUpperCase()}`;
 
       const authUser: User = {
-        id: newUser.id,
-        username: newUser.username,
-        avatar: newUser.avatar,
+        id: anonId,
+        username: username,
+        avatar: avatarPlaceholder,
         isAnonymous: true,
-        name: newUser.username,
-        image: newUser.avatar,
+        name: username,
+        image: avatarPlaceholder,
       };
-
-      // Store user in localStorage (in a real app, this would be a secure HTTP-only cookie)
       localStorage.setItem("courtPieceUser", JSON.stringify(authUser));
       setUser(authUser);
     } catch (error) {
       console.error("Anonymous login failed:", error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem("courtPieceUser");
+  const handleLogout = async () => {
+    const storedUser = localStorage.getItem("courtPieceUser");
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser.isAnonymous) {
+          localStorage.removeItem("courtPieceUser");
+        }
+      } catch (e) {
+        localStorage.removeItem("courtPieceUser");
+      }
+    }
     setUser(null);
+    await signOut({ redirect: false });
+    router.push("/");
+    console.log("[useAuth] User logged out.");
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, isLoading, login, loginAnonymously, logout }}
+      value={{
+        user,
+        isLoading,
+        isAuthenticated:
+          status === "authenticated" || (!!user && user.isAnonymous),
+        loginAnonymously,
+        logout: handleLogout,
+      }}
     >
       <AuthSyncComponent />
       {children}
