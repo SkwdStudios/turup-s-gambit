@@ -21,23 +21,25 @@ import { GameInfo } from "@/components/game-info";
 interface BaseMessage {
   type: string;
   payload?: any;
+  suit?: string;
 }
 
 interface GameRoomPageProps {
-  params: {
+  params: Promise<{
     roomId: string;
-  };
+  }>;
 }
 
 export default function GameRoomPage({ params }: GameRoomPageProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const roomId = params?.roomId as string;
+  const resolvedParams = React.use(params);
+  const roomId = resolvedParams.roomId;
   const mode = searchParams?.get("mode") || "classic";
 
   const [showReplay, setShowReplay] = useState(false);
   const [gameStatus, setGameStatus] = useState<
-    "waiting" | "dealing" | "bidding" | "playing" | "ended"
+    "waiting" | "initial_deal" | "bidding" | "final_deal" | "playing" | "ended"
   >("waiting");
   const [players, setPlayers] = useState<string[]>([]);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -53,6 +55,8 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
   const [votingComplete, setVotingComplete] = useState(false);
   const [currentRoom, setCurrentRoom] = useState<GameRoom | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [allPlayersJoined, setAllPlayersJoined] = useState(false);
+  const [trumpSuit, setTrumpSuit] = useState<string | null>(null);
 
   const { gameState, updateGameState } = useGameState(
     mode as "classic" | "frenzy"
@@ -122,92 +126,81 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
 
         currentWs.onmessage = (event: MessageEvent) => {
           try {
-            const message: BaseMessage = JSON.parse(event.data);
-            console.log(`[WS Client] Received message type: ${message.type}`);
+            const data = JSON.parse(event.data);
+            console.log(`[WS Client] Received message type: ${data.type}`);
 
-            switch (message.type) {
+            switch (data.type) {
               case "room:joined":
-                const joinedRoom = message.payload as GameRoom;
-                console.log("Joined room (ws):", joinedRoom);
-                setCurrentRoom(joinedRoom);
-                setPlayers(joinedRoom.players.map((p) => p.name));
-                setGameStatus(
-                  joinedRoom.gameState.gamePhase === "waiting"
-                    ? "waiting"
-                    : "playing"
-                );
+                console.log("[WS Client] Joined room:", data.room);
+                setCurrentRoom(data.room);
+                setPlayers(data.room.players.map((p: Player) => p.id));
                 break;
-              case "room:updated":
-                const updatedRoom = message.payload as GameRoom;
-                console.log("Room updated (ws):", updatedRoom);
-                setCurrentRoom(updatedRoom);
-                setPlayers(updatedRoom.players.map((p) => p.name));
-                if (updatedRoom.gameState.gamePhase !== "waiting") {
-                  setGameStatus(
-                    updatedRoom.gameState.gamePhase === "bidding"
-                      ? "bidding"
-                      : "playing"
-                  );
-                }
-                break;
+
               case "player:joined":
-                const joinedPlayer = message.payload as Player;
-                console.log("Player joined (ws):", joinedPlayer);
-                setPlayers((prev) => {
-                  if (prev.includes(joinedPlayer.name)) return prev;
-                  return [...prev, joinedPlayer.name];
-                });
+                console.log("[WS Client] Player joined:", data.player);
+                setPlayers((prev) => [...prev, data.player.id]);
                 break;
+
               case "player:left":
-                const leftPlayerId = message.payload as string;
-                console.log("Player left (ws):", leftPlayerId);
-                if (currentRoom) {
-                  const leftPlayerName = currentRoom.players.find(
-                    (p: Player) => p.id === leftPlayerId
-                  )?.name;
-                  if (leftPlayerName) {
-                    setPlayers((prev) =>
-                      prev.filter((p) => p !== leftPlayerName)
-                    );
-                  }
+                console.log("[WS Client] Player left:", data.playerId);
+                setPlayers((prev) => prev.filter((id) => id !== data.playerId));
+                setAllPlayersJoined(false);
+                break;
+
+              case "game:start":
+                if (players.length === 4) {
+                  setAllPlayersJoined(true);
+                  setGameStatus("initial_deal");
+                  setShowShuffleAnimation(true);
+
+                  setTimeout(() => {
+                    setInitialCardsDeal(true);
+                    setShowShuffleAnimation(false);
+                    setGameStatus("bidding");
+                  }, 3000);
                 }
                 break;
-              case "game:started":
-                const startedRoom = message.payload as GameRoom;
-                console.log("Game started (ws):", startedRoom);
-                setShowShuffleAnimation(true);
+
+              case "game:trump_vote":
+                console.log("[WS Client] Trump vote:", data);
+                setTrumpVotes((prev) => ({
+                  ...prev,
+                  [data.suit]: (prev[data.suit] || 0) + 1,
+                }));
+                break;
+
+              case "game:trump_selected":
+                console.log("[WS Client] Trump selected:", data.suit);
+                setTrumpSuit(data.suit);
+                setVotingComplete(true);
+                updateGameState({ trumpSuit: data.suit });
+
                 setTimeout(() => {
-                  setShowShuffleAnimation(false);
-                  setGameStatus("bidding");
-                }, 3000);
+                  setGameStatus("final_deal");
+                  setShowShuffleAnimation(true);
+
+                  setTimeout(() => {
+                    setInitialCardsDeal(false);
+                    setShowShuffleAnimation(false);
+                    setGameStatus("playing");
+                  }, 3000);
+                }, 2000);
                 break;
-              case "game:state-updated":
-                const updatedState = message.payload as GameState;
-                console.log("Game state updated (ws):", updatedState);
-                updateGameState({
-                  ...updatedState,
-                  trumpSuit: updatedState.trumpSuit || undefined,
-                });
-                if (updatedState.gamePhase === "playing") {
-                  setGameStatus("playing");
-                }
+
+              case "game:card_played":
+                console.log("[WS Client] Card played:", data);
                 break;
-              case "error":
-                console.error("[WS Server Error]:", message.payload);
+
+              case "game:ended":
+                console.log("[WS Client] Game ended:", data);
+                setGameStatus("ended");
                 break;
+
               default:
-                console.warn(
-                  "[WS Client] Unhandled message type:",
-                  message.type
-                );
+                console.log("[WS Client] Unknown message type:", data.type);
             }
           } catch (error) {
-            console.error(
-              "[WS Client] Error processing message:",
-              error,
-              "Data:",
-              event.data
-            );
+            console.error("[WS Client] Error parsing message:", error);
           }
         };
       })
@@ -226,7 +219,7 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
       ws.current = null;
       setIsConnected(false);
     };
-  }, [roomId, user]);
+  }, [roomId, user, players.length]);
 
   useEffect(() => {
     if (!user) {
@@ -238,11 +231,38 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
     sendMessage({ type: "game:ready", payload: { roomId } });
   }
 
-  function handleTrumpVote(suit: string) {
-    if (userVote) return;
+  // Handle trump voting
+  const handleTrumpVote = (suit: string) => {
+    if (userVote || votingComplete) return;
+
     setUserVote(suit);
-    sendMessage({ type: "game:select-trump", payload: { roomId, suit } });
-  }
+    sendMessage({
+      type: "game:trump_vote",
+      suit,
+    });
+
+    // For demo purposes, simulate other players voting
+    setTimeout(() => {
+      const otherSuits = ["hearts", "diamonds", "clubs", "spades"].filter(
+        (s) => s !== suit
+      );
+      const randomSuit =
+        otherSuits[Math.floor(Math.random() * otherSuits.length)];
+
+      sendMessage({
+        type: "game:trump_vote",
+        suit: randomSuit,
+      });
+
+      // Simulate server selecting trump
+      setTimeout(() => {
+        sendMessage({
+          type: "game:trump_selected",
+          suit: Math.random() > 0.5 ? suit : randomSuit,
+        });
+      }, 2000);
+    }, 1000);
+  };
 
   function handlePlayCard(card: Card) {
     sendMessage({ type: "game:play-card", payload: { roomId, card } });
@@ -292,15 +312,85 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
-            <GameBoard 
-              roomId={roomId}
-              gameMode={mode as "classic" | "frenzy"}
-              players={players}
-              gameState={gameState}
-              onUpdateGameState={updateGameState}
-              onPlayCard={handlePlayCard}
-              onBid={handleBid}
-            />
+            {gameStatus === "waiting" && (
+              <div className="w-full max-w-md p-6 border-2 border-primary/30 rounded-lg bg-card/90 backdrop-blur-sm text-center">
+                <h2 className="text-2xl font-medieval mb-4">
+                  Waiting for Players
+                </h2>
+                <p className="mb-4">
+                  Share this room with friends to start the game
+                </p>
+                <div className="flex justify-center mb-4">
+                  <Button
+                    variant="outline"
+                    className="flex items-center gap-2"
+                    onClick={() => {
+                      navigator.clipboard.writeText(window.location.href);
+                    }}
+                  >
+                    <Share className="h-4 w-4" />
+                    Copy Room Link
+                  </Button>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[0, 1, 2, 3].map((index) => (
+                    <div
+                      key={index}
+                      className={`h-24 border-2 rounded-lg flex items-center justify-center ${
+                        index < players.length
+                          ? "border-primary bg-primary/10"
+                          : "border-muted bg-muted/10"
+                      }`}
+                    >
+                      {index < players.length ? (
+                        <span className="font-medieval">{players[index]}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Empty</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 text-sm text-muted-foreground">
+                  {players.length}/4 players joined
+                </p>
+              </div>
+            )}
+
+            {gameStatus === "initial_deal" && showShuffleAnimation && (
+              <CardShuffleAnimation
+                onComplete={() => setShowShuffleAnimation(false)}
+              />
+            )}
+
+            {gameStatus === "bidding" && (
+              <TrumpBidding
+                onVote={handleTrumpVote}
+                userVote={userVote}
+                votes={trumpVotes}
+                votingComplete={votingComplete}
+              />
+            )}
+
+            {gameStatus === "final_deal" && showShuffleAnimation && (
+              <CardShuffleAnimation
+                onComplete={() => setShowShuffleAnimation(false)}
+              />
+            )}
+
+            {(gameStatus === "playing" || gameStatus === "ended") && (
+              <GameBoard
+                roomId={roomId}
+                gameMode={mode as "classic" | "frenzy"}
+                players={players}
+                gameState={gameState}
+                onUpdateGameState={updateGameState}
+                onRecordMove={recordMove}
+                gameStatus={gameStatus}
+                initialCardsDeal={initialCardsDeal}
+                onPlayCard={handlePlayCard}
+                onBid={handleBid}
+              />
+            )}
           </div>
           <div className="space-y-8">
             <GameInfo roomId={roomId} />

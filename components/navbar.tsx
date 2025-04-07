@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -19,30 +19,36 @@ export function Navbar() {
   const pathname = usePathname();
   const { user, isAuthenticated, logout } = useAuth();
 
-  // Debug logging
-  useEffect(() => {
-    console.log("Auth status:", { isAuthenticated, user });
-  }, [isAuthenticated, user]);
+  // Remove debug logging
+  // useEffect(() => {
+  //   console.log("Auth status:", { isAuthenticated, user });
+  // }, [isAuthenticated, user]);
 
-  const handleNavigation = (path: string) => {
-    if (!user && (path === "/profile" || path === "/game")) {
-      setShowLoginModal(true);
-      return;
-    }
-    router.push(path);
-  };
+  const handleNavigation = useCallback(
+    (path: string) => {
+      if (!user && (path === "/profile" || path === "/game")) {
+        setShowLoginModal(true);
+        return;
+      }
+      router.push(path);
+    },
+    [user, router]
+  );
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     logout();
     if (pathname === "/profile" || pathname === "/game") {
       router.push("/");
     }
-  };
+  }, [logout, pathname, router]);
 
-  // Get user display name and avatar
-  const displayName = user?.discordUsername || user?.username || "User";
-  const avatarUrl =
-    user?.discordAvatar || user?.avatar || "/default-avatar.png";
+  // Memoize user display info to prevent unnecessary recalculations
+  const userDisplayInfo = useMemo(() => {
+    return {
+      displayName: user?.discordUsername || user?.username || "User",
+      avatarUrl: user?.discordAvatar || user?.avatar || "/default-avatar.png",
+    };
+  }, [user]);
 
   return (
     <>
@@ -100,12 +106,17 @@ export function Navbar() {
                     onClick={() => handleNavigation("/profile")}
                   >
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={avatarUrl} alt={displayName} />
+                      <AvatarImage
+                        src={userDisplayInfo.avatarUrl}
+                        alt={userDisplayInfo.displayName}
+                      />
                       <AvatarFallback className="bg-primary/20 text-primary">
-                        {displayName.charAt(0).toUpperCase()}
+                        {userDisplayInfo.displayName.charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="hidden lg:inline">{displayName}</span>
+                    <span className="hidden lg:inline">
+                      {userDisplayInfo.displayName}
+                    </span>
                   </Button>
                   <Button
                     variant="outline"

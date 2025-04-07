@@ -14,7 +14,13 @@ interface GameBoardProps {
   gameState: GameState;
   onUpdateGameState: (newState: Partial<GameState>) => void;
   onRecordMove: (move: any) => void;
-  gameStatus: "waiting" | "bidding" | "playing" | "ended";
+  gameStatus:
+    | "waiting"
+    | "initial_deal"
+    | "bidding"
+    | "final_deal"
+    | "playing"
+    | "ended";
   initialCardsDeal?: boolean;
   onPlayCard?: (card: CardType) => void;
   onBid?: (bid: number) => void;
