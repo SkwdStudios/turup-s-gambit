@@ -17,6 +17,7 @@ import { GameRoom, GameState, Card, Suit, Player } from "@/app/types/game";
 import { ProtectedRoute } from "@/components/protected-route";
 import { GameControls } from "@/components/game-controls";
 import { GameInfo } from "@/components/game-info";
+import { motion } from "framer-motion";
 
 interface BaseMessage {
   type: string;
@@ -85,141 +86,188 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
   useEffect(() => {
     if (!roomId || !user) return;
 
-    // First, ensure the WebSocket server is running
-    fetch("/api/socket")
-      .then(() => {
-        const wsProto =
-          window.location.protocol === "https:" ? "wss://" : "ws://";
-        const wsUrl = `${wsProto}${window.location.hostname}:3001/api/socket`;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_ATTEMPTS = 3;
+    const RECONNECT_DELAY = 1000;
 
-        console.log(`[WS Client] Attempting to connect to ${wsUrl}`);
-        ws.current = new WebSocket(wsUrl);
-        const currentWs = ws.current;
+    const connectWebSocket = () => {
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.error("[WS Client] Max reconnection attempts reached");
+        return;
+      }
 
-        currentWs.onopen = () => {
-          console.log("[WS Client] WebSocket connection opened");
-          setIsConnected(true);
-          sendMessage({
-            type: "room:join",
-            payload: {
-              roomId: roomId,
-              playerName: user?.email?.split("@")[0] || "Anonymous",
-            },
-          });
-        };
+      // First, ensure the WebSocket server is running
+      fetch("/api/socket")
+        .then(() => {
+          const wsProto =
+            window.location.protocol === "https:" ? "wss://" : "ws://";
+          const wsUrl = `${wsProto}${window.location.hostname}:3001/api/socket`;
 
-        currentWs.onclose = (event: CloseEvent) => {
-          console.log(
-            "[WS Client] WebSocket connection closed. Code:",
-            event.code,
-            "Reason:",
-            event.reason
-          );
-          setIsConnected(false);
-          ws.current = null;
-        };
+          console.log(`[WS Client] Attempting to connect to ${wsUrl}`);
+          ws.current = new WebSocket(wsUrl);
+          const currentWs = ws.current;
 
-        currentWs.onerror = (event: Event) => {
-          console.error("[WS Client] WebSocket error:", event);
-          setIsConnected(false);
-        };
+          currentWs.onopen = () => {
+            console.log("[WS Client] WebSocket connection opened");
+            setIsConnected(true);
+            reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+            sendMessage({
+              type: "room:join",
+              payload: {
+                roomId: roomId,
+                playerName: user?.email?.split("@")[0] || "Anonymous",
+              },
+            });
+          };
 
-        currentWs.onmessage = (event: MessageEvent) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log(`[WS Client] Received message type: ${data.type}`);
+          currentWs.onclose = (event: CloseEvent) => {
+            console.log(
+              "[WS Client] WebSocket connection closed. Code:",
+              event.code,
+              "Reason:",
+              event.reason
+            );
+            setIsConnected(false);
+            ws.current = null;
 
-            switch (data.type) {
-              case "room:joined":
-                console.log("[WS Client] Joined room:", data.room);
-                setCurrentRoom(data.room);
-                setPlayers(data.room.players.map((p: Player) => p.id));
-                break;
-
-              case "player:joined":
-                console.log("[WS Client] Player joined:", data.player);
-                setPlayers((prev) => [...prev, data.player.id]);
-                break;
-
-              case "player:left":
-                console.log("[WS Client] Player left:", data.playerId);
-                setPlayers((prev) => prev.filter((id) => id !== data.playerId));
-                setAllPlayersJoined(false);
-                break;
-
-              case "game:start":
-                if (players.length === 4) {
-                  setAllPlayersJoined(true);
-                  setGameStatus("initial_deal");
-                  setShowShuffleAnimation(true);
-
-                  setTimeout(() => {
-                    setInitialCardsDeal(true);
-                    setShowShuffleAnimation(false);
-                    setGameStatus("bidding");
-                  }, 3000);
-                }
-                break;
-
-              case "game:trump_vote":
-                console.log("[WS Client] Trump vote:", data);
-                setTrumpVotes((prev) => ({
-                  ...prev,
-                  [data.suit]: (prev[data.suit] || 0) + 1,
-                }));
-                break;
-
-              case "game:trump_selected":
-                console.log("[WS Client] Trump selected:", data.suit);
-                setTrumpSuit(data.suit);
-                setVotingComplete(true);
-                updateGameState({ trumpSuit: data.suit });
-
-                setTimeout(() => {
-                  setGameStatus("final_deal");
-                  setShowShuffleAnimation(true);
-
-                  setTimeout(() => {
-                    setInitialCardsDeal(false);
-                    setShowShuffleAnimation(false);
-                    setGameStatus("playing");
-                  }, 3000);
-                }, 2000);
-                break;
-
-              case "game:card_played":
-                console.log("[WS Client] Card played:", data);
-                break;
-
-              case "game:ended":
-                console.log("[WS Client] Game ended:", data);
-                setGameStatus("ended");
-                break;
-
-              default:
-                console.log("[WS Client] Unknown message type:", data.type);
+            // Only attempt to reconnect if it wasn't a normal closure
+            if (event.code !== 1000) {
+              reconnectAttempts++;
+              if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                console.log(
+                  `[WS Client] Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`
+                );
+                setTimeout(connectWebSocket, RECONNECT_DELAY);
+              }
             }
-          } catch (error) {
-            console.error("[WS Client] Error parsing message:", error);
-          }
-        };
-      })
-      .catch((error) => {
-        console.error(
-          "[WS Client] Failed to initialize WebSocket server:",
-          error
-        );
-      });
+          };
+
+          currentWs.onerror = (event: Event) => {
+            console.error("[WS Client] WebSocket error:", event);
+            setIsConnected(false);
+          };
+
+          currentWs.onmessage = (event: MessageEvent) => {
+            try {
+              const data = JSON.parse(event.data);
+              console.log(`[WS Client] Received message type: ${data.type}`);
+
+              switch (data.type) {
+                case "room:joined":
+                  console.log("[WS Client] Joined room:", data.payload);
+                  setCurrentRoom(data.payload);
+                  setPlayers(data.payload.players.map((p: Player) => p.name));
+                  break;
+
+                case "player:joined":
+                  console.log("[WS Client] Player joined:", data.payload);
+                  setPlayers((prev) => [...prev, data.payload.name]);
+                  if (currentRoom) {
+                    // Check if player already exists in the room
+                    const playerExists = currentRoom.players.some(
+                      (p) => p.name === data.payload.name
+                    );
+                    if (!playerExists) {
+                      setCurrentRoom({
+                        ...currentRoom,
+                        players: [...currentRoom.players, data.payload],
+                      });
+                    }
+                  }
+                  break;
+
+                case "player:left":
+                  console.log("[WS Client] Player left:", data.payload);
+                  setPlayers((prev) =>
+                    prev.filter((name) => name !== data.payload)
+                  );
+                  if (currentRoom) {
+                    setCurrentRoom({
+                      ...currentRoom,
+                      players: currentRoom.players.filter(
+                        (p) => p.name !== data.payload
+                      ),
+                    });
+                  }
+                  setAllPlayersJoined(false);
+                  break;
+
+                case "game:start":
+                  if (players.length === 4) {
+                    setAllPlayersJoined(true);
+                    setGameStatus("initial_deal");
+                    setShowShuffleAnimation(true);
+
+                    setTimeout(() => {
+                      setInitialCardsDeal(true);
+                      setShowShuffleAnimation(false);
+                      setGameStatus("bidding");
+                    }, 3000);
+                  }
+                  break;
+
+                case "game:trump_vote":
+                  console.log("[WS Client] Trump vote:", data);
+                  setTrumpVotes((prev) => ({
+                    ...prev,
+                    [data.suit]: (prev[data.suit] || 0) + 1,
+                  }));
+                  break;
+
+                case "game:trump_selected":
+                  console.log("[WS Client] Trump selected:", data.suit);
+                  setTrumpSuit(data.suit);
+                  setVotingComplete(true);
+                  updateGameState({ trumpSuit: data.suit });
+
+                  setTimeout(() => {
+                    setGameStatus("final_deal");
+                    setShowShuffleAnimation(true);
+
+                    setTimeout(() => {
+                      setInitialCardsDeal(false);
+                      setShowShuffleAnimation(false);
+                      setGameStatus("playing");
+                    }, 3000);
+                  }, 2000);
+                  break;
+
+                case "game:card_played":
+                  console.log("[WS Client] Card played:", data);
+                  break;
+
+                case "game:ended":
+                  console.log("[WS Client] Game ended:", data);
+                  setGameStatus("ended");
+                  break;
+
+                default:
+                  console.log("[WS Client] Unknown message type:", data.type);
+              }
+            } catch (error) {
+              console.error("[WS Client] Error parsing message:", error);
+            }
+          };
+        })
+        .catch((error) => {
+          console.error(
+            "[WS Client] Failed to initialize WebSocket server:",
+            error
+          );
+        });
+    };
+
+    connectWebSocket();
 
     return () => {
       console.log("[WS Client] Cleaning up WebSocket connection");
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.close();
+        ws.current.close(1000, "Component unmounting");
       }
       ws.current = null;
       setIsConnected(false);
     };
-  }, [roomId, user, players.length]);
+  }, [roomId, user]);
 
   useEffect(() => {
     if (!user) {
@@ -313,14 +361,34 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2">
             {gameStatus === "waiting" && (
-              <div className="w-full max-w-md p-6 border-2 border-primary/30 rounded-lg bg-card/90 backdrop-blur-sm text-center">
-                <h2 className="text-2xl font-medieval mb-4">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="w-full max-w-md mx-auto p-6 border-2 border-primary/30 rounded-lg bg-card/90 backdrop-blur-sm text-center"
+              >
+                <motion.h2
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-2xl font-medieval mb-4"
+                >
                   Waiting for Players
-                </h2>
-                <p className="mb-4">
+                </motion.h2>
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="mb-4"
+                >
                   Share this room with friends to start the game
-                </p>
-                <div className="flex justify-center mb-4">
+                </motion.p>
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="flex justify-center mb-4"
+                >
                   <Button
                     variant="outline"
                     className="flex items-center gap-2"
@@ -331,11 +399,14 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
                     <Share className="h-4 w-4" />
                     Copy Room Link
                   </Button>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
+                </motion.div>
+                <div className="grid grid-cols-4 gap-4">
                   {[0, 1, 2, 3].map((index) => (
-                    <div
+                    <motion.div
                       key={index}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.5 + index * 0.1 }}
                       className={`h-24 border-2 rounded-lg flex items-center justify-center ${
                         index < players.length
                           ? "border-primary bg-primary/10"
@@ -343,17 +414,38 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
                       }`}
                     >
                       {index < players.length ? (
-                        <span className="font-medieval">{players[index]}</span>
+                        <motion.span
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.6 + index * 0.1 }}
+                          className="font-medieval"
+                        >
+                          {currentRoom?.players.find(
+                            (p) => p.name === players[index]
+                          )?.name || players[index]}
+                        </motion.span>
                       ) : (
-                        <span className="text-muted-foreground">Empty</span>
+                        <motion.span
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.6 + index * 0.1 }}
+                          className="text-muted-foreground"
+                        >
+                          Empty
+                        </motion.span>
                       )}
-                    </div>
+                    </motion.div>
                   ))}
                 </div>
-                <p className="mt-4 text-sm text-muted-foreground">
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.9 }}
+                  className="mt-4 text-sm text-muted-foreground"
+                >
                   {players.length}/4 players joined
-                </p>
-              </div>
+                </motion.p>
+              </motion.div>
             )}
 
             {gameStatus === "initial_deal" && showShuffleAnimation && (
@@ -392,10 +484,15 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
               />
             )}
           </div>
-          <div className="space-y-8">
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="space-y-8"
+          >
             <GameInfo roomId={roomId} />
             <GameControls roomId={roomId} />
-          </div>
+          </motion.div>
         </div>
       </div>
     </ProtectedRoute>

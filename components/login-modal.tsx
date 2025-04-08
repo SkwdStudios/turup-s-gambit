@@ -92,14 +92,20 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     setError(null);
 
     try {
-      await signIn("anonymous", {
+      const result = await signIn("credentials", {
         username: values.username,
-        redirectTo: "/",
+        redirect: false,
       });
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
       onClose();
       router.refresh();
     } catch (err) {
       setError("Failed to login as guest");
+      console.error("Anonymous login error:", err);
     } finally {
       setIsLoading(false);
     }

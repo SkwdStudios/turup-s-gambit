@@ -164,6 +164,25 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
     `[WSS] Join logic: ${playerName} (${clientInfo.id}) joining ${roomId}`
   );
 
+  // Check if player is already in the room
+  const existingRoom = rooms.get(roomId);
+  if (existingRoom) {
+    // Find if this player name already exists in the room
+    for (const [existingClientId, existingWs] of existingRoom.entries()) {
+      const existingClient = clients.get(existingWs);
+      if (existingClient && existingClient.name === playerName) {
+        // If this is a different connection for the same player, close the old one
+        if (existingWs !== ws) {
+          console.log(`[WSS] Closing old connection for player ${playerName}`);
+          handleDisconnect(existingWs);
+          existingWs.close();
+        }
+        break;
+      }
+    }
+  }
+
+  // Clean up any existing room connection for this websocket
   if (clientInfo.roomId) {
     handleDisconnect(ws);
   }
@@ -183,10 +202,9 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
     }`
   );
 
-  let roomState: GameRoom;
   try {
-    const existingRoom = gameManager.getRoom(roomId);
-    if (existingRoom && existingRoom.players.length >= 4) {
+    const existingGameRoom = gameManager.getRoom(roomId);
+    if (existingGameRoom && existingGameRoom.players.length >= 4) {
       console.warn(
         `[WSS] Room ${roomId} is full in GameManager. Rejecting join.`
       );
@@ -198,49 +216,45 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
       return;
     }
 
-    roomState = existingRoom || gameManager.findOrCreateRoom(roomId);
-    const gamePlayer = gameManager.addPlayerToRoom(
-      roomState.id,
-      playerName,
-      clientInfo.id
+    // Add player to game manager if not already present
+    const existingPlayer = existingGameRoom?.players.find(
+      (p) => p.name === playerName
     );
-    console.log(
-      `[WSS] Player ${playerName} added to GameManager for room ${roomState.id}`
-    );
-  } catch (error) {
-    console.error(
-      `[WSS] Error interacting with GameManager during join:`,
-      error
-    );
-    sendToClient(ws, {
-      type: "error",
-      payload:
-        error instanceof Error ? error.message : "Failed to join game room.",
+    let roomState: GameRoom;
+
+    if (!existingPlayer) {
+      // Create room if it doesn't exist
+      if (!existingGameRoom) {
+        roomState = gameManager.findOrCreateRoom();
+      } else {
+        const player = gameManager.addPlayerToRoom(roomId, playerName);
+        roomState = gameManager.getRoom(roomId)!;
+      }
+      console.log(
+        `[WSS] Player ${playerName} added to GameManager for room ${roomId}`
+      );
+    } else {
+      if (!existingGameRoom) {
+        throw new Error("Unexpected state: existingGameRoom is undefined");
+      }
+      roomState = existingGameRoom;
+      console.log(
+        `[WSS] Player ${playerName} already exists in GameManager for room ${roomId}`
+      );
+    }
+
+    sendToClient(ws, { type: "room:joined", payload: roomState });
+    broadcast(roomId, { type: "room:updated", payload: roomState });
+    broadcast(roomId, {
+      type: "player:joined",
+      payload: { id: clientInfo.id, name: playerName },
     });
-    rooms.get(roomId)?.delete(clientInfo.id);
-    if (rooms.get(roomId)?.size === 0) rooms.delete(roomId);
-    clients.delete(ws);
-    ws.close();
-    return;
-  }
 
-  const updatedRoomState = gameManager.getRoom(roomState.id);
-  if (updatedRoomState) {
-    sendToClient(ws, { type: "room:joined", payload: updatedRoomState });
-    broadcast(roomId, { type: "room:updated", payload: updatedRoomState }, ws);
-    broadcast(
-      roomId,
-      {
-        type: "player:joined",
-        payload: { id: clientInfo.id, name: clientInfo.name },
-      },
-      ws
-    );
-
-    if (updatedRoomState.players.length === 4) {
+    // Start game if room is full
+    if (roomState.players.length === 4) {
       console.log(`[WSS] Room ${roomId} is full, starting game`);
-      gameManager.startGame(roomState.id);
-      const finalRoomState = gameManager.getRoom(roomState.id);
+      gameManager.startGame(roomId);
+      const finalRoomState = gameManager.getRoom(roomId);
       if (finalRoomState) {
         broadcast(roomId, { type: "game:started", payload: finalRoomState });
         broadcast(roomId, {
@@ -249,10 +263,19 @@ function handleRoomJoin(ws: WebSocket, payload: JoinRoomPayload) {
         });
       }
     }
-  } else {
+  } catch (error) {
     console.error(
-      `[WSS] Room ${roomState.id} not found in GameManager after updates!`
+      `[WSS] Error handling room join for ${playerName} in room ${roomId}:`,
+      error
     );
+    sendToClient(ws, {
+      type: "error",
+      payload: "Failed to join room. Please try again.",
+    });
+    rooms.get(roomId)?.delete(clientInfo.id);
+    if (rooms.get(roomId)?.size === 0) rooms.delete(roomId);
+    clients.delete(ws);
+    ws.close();
   }
 }
 
@@ -265,7 +288,7 @@ function handleDisconnect(ws: WebSocket) {
     `[WSS] Client disconnected: ${clientInfo.id} (Name: ${clientInfo.name})`
   );
 
-  const { roomId, id: clientId } = clientInfo;
+  const { roomId, id: clientId, name: playerName } = clientInfo;
 
   if (roomId && rooms.has(roomId)) {
     rooms.get(roomId)?.delete(clientId);
@@ -286,7 +309,7 @@ function handleDisconnect(ws: WebSocket) {
       );
       const updatedRoomState = gameManager.getRoom(roomId);
       if (updatedRoomState) {
-        broadcast(roomId, { type: "player:left", payload: clientId });
+        broadcast(roomId, { type: "player:left", payload: playerName });
         broadcast(roomId, { type: "room:updated", payload: updatedRoomState });
       }
     } catch (error) {
@@ -326,17 +349,45 @@ export async function POST(req: Request) {
     });
   }
 
-  const { socket, response } = await new Promise<{
-    socket: any;
-    response: any;
-  }>((resolve) => {
-    global.wss?.handleUpgrade(req, req.socket, Buffer.alloc(0), (ws) => {
-      resolve({
-        socket: ws,
-        response: new NextResponse(null, { status: 101 }),
-      });
-    });
-  });
+  // Create a dummy socket for the WebSocket upgrade
+  const dummySocket = {
+    write: () => {},
+    end: () => {},
+    destroy: () => {},
+  };
 
-  return response;
+  return new Promise<Response>((resolve) => {
+    try {
+      // Convert the Request to a format that ws can handle
+      const fakeReq = {
+        headers: Object.fromEntries(req.headers.entries()),
+        method: req.method,
+        url: req.url,
+      };
+
+      global.wss?.handleUpgrade(
+        fakeReq as any,
+        dummySocket as any,
+        Buffer.alloc(0),
+        (ws: WebSocket) => {
+          resolve(
+            new Response(null, {
+              status: 101,
+              headers: {
+                Upgrade: "websocket",
+                Connection: "Upgrade",
+              },
+            })
+          );
+        }
+      );
+    } catch (error) {
+      console.error("Error during WebSocket upgrade:", error);
+      resolve(
+        new Response("WebSocket upgrade failed", {
+          status: 500,
+        })
+      );
+    }
+  });
 }

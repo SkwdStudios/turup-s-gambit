@@ -11,6 +11,7 @@ import { LoginModal } from "@/components/login-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { MusicControls } from "@/components/music-controls";
 import Image from "next/image";
+import { motion } from "framer-motion";
 
 export function Navbar() {
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -52,10 +53,20 @@ export function Navbar() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-primary/20 bg-card/80 backdrop-blur-md mb-8">
-        <div className="container mx-auto px-4 pb-4">
+      <motion.header
+        initial={{ y: -100 }}
+        animate={{ y: 0 }}
+        transition={{ type: "spring", stiffness: 100, damping: 20 }}
+        className="fixed top-0 left-0 right-0 z-50 border-b border-primary/20 bg-card/80 backdrop-blur-md"
+      >
+        <div className="container mx-auto px-4">
           <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center">
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.2 }}
+              className="flex items-center"
+            >
               <Link href="/" className="flex items-center gap-2">
                 <Image
                   src="/logo.svg"
@@ -68,37 +79,55 @@ export function Navbar() {
                   Turup's Gambit
                 </span>
               </Link>
-            </div>
+            </motion.div>
 
             {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-6">
-              <Button
-                variant="link"
-                size="sm"
-                className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
-                onClick={() => handleNavigation("/about")}
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
               >
-                <Info
-                  size={18}
-                  className="transition-transform duration-300 hover:scale-110"
-                />
-                <span>About</span>
-              </Button>
-              <Button
-                variant="link"
-                size="sm"
-                className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
-                onClick={() => setShowMusicControls(!showMusicControls)}
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
+                  onClick={() => handleNavigation("/about")}
+                >
+                  <Info
+                    size={18}
+                    className="transition-transform duration-300 hover:scale-110"
+                  />
+                  <span>About</span>
+                </Button>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
               >
-                <Music
-                  size={18}
-                  className="transition-transform duration-300 hover:scale-110"
-                />
-                <span>Music</span>
-              </Button>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="flex items-center gap-2 text-foreground hover:text-primary transition-colors"
+                  onClick={() => setShowMusicControls(!showMusicControls)}
+                >
+                  <Music
+                    size={18}
+                    className="transition-transform duration-300 hover:scale-110"
+                  />
+                  <span>Music</span>
+                </Button>
+              </motion.div>
 
               {user ? (
-                <div className="flex items-center gap-4">
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="flex items-center gap-4"
+                >
                   <Button
                     variant="ghost"
                     size="sm"
@@ -127,17 +156,23 @@ export function Navbar() {
                     <LogOut size={18} />
                     <span>Logout</span>
                   </Button>
-                </div>
+                </motion.div>
               ) : (
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="flex items-center gap-2 medieval-button bg-primary text-primary-foreground"
-                  onClick={() => setShowLoginModal(true)}
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
                 >
-                  <LogIn size={18} />
-                  <span>Login</span>
-                </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="flex items-center gap-2 medieval-button bg-primary text-primary-foreground"
+                    onClick={() => setShowLoginModal(true)}
+                  >
+                    <LogIn size={18} />
+                    <span>Login</span>
+                  </Button>
+                </motion.div>
               )}
             </nav>
 
@@ -149,7 +184,12 @@ export function Navbar() {
                 </Button>
               </SheetTrigger>
               <SheetContent className="bg-card/95 backdrop-blur-md border-primary/20 p-6">
-                <div className="flex flex-col gap-6 mt-8">
+                <motion.div
+                  className="flex flex-col gap-6 mt-8"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 }}
+                >
                   <Button
                     variant="link"
                     className="flex items-center justify-start gap-2 text-foreground hover:text-primary transition-colors"
@@ -202,16 +242,21 @@ export function Navbar() {
                       <span>Login</span>
                     </Button>
                   )}
-                </div>
+                </motion.div>
               </SheetContent>
             </Sheet>
           </div>
         </div>
-      </header>
+      </motion.header>
 
       {/* Music Controls Popup */}
       {showMusicControls && (
-        <div className="fixed top-20 right-4 z-50 p-4 rounded-lg bg-card/90 backdrop-blur-md border border-primary/20 shadow-xl">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          className="fixed top-20 right-4 z-50 p-4 rounded-lg bg-card/90 backdrop-blur-md border border-primary/20 shadow-xl"
+        >
           <div className="flex justify-between items-center mb-2">
             <h3 className="font-medieval text-primary">Music Controls</h3>
             <Button
@@ -223,7 +268,7 @@ export function Navbar() {
             </Button>
           </div>
           <MusicControls />
-        </div>
+        </motion.div>
       )}
 
       {/* Login Modal */}

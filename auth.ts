@@ -2,6 +2,8 @@ import NextAuth from "next-auth";
 import Discord, { DiscordProfile } from "next-auth/providers/discord";
 import { prisma } from "./lib/prisma";
 import Google from "next-auth/providers/google";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { User } from "next-auth";
 // Debug logging
 console.log("Environment variables check:");
 console.log("AUTH_DISCORD_ID exists:", !!process.env.AUTH_DISCORD_ID);
@@ -27,7 +29,99 @@ if (!process.env.NEXTAUTH_URL?.startsWith("http")) {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: [Discord, Google],
+  providers: [
+    Discord,
+    Google,
+    CredentialsProvider({
+      id: "credentials",
+      name: "Anonymous",
+      credentials: {
+        username: { label: "Username", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.username) {
+          return null;
+        }
+
+        try {
+          // Generate a unique ID for anonymous users
+          const anonymousId = `anon_${Date.now()}_${Math.random()
+            .toString(36)
+            .substring(2, 9)}`;
+          const username = credentials.username as string;
+
+          // Check if username is already taken
+          const existingUser = await prisma.user.findFirst({
+            where: { username: username },
+          });
+
+          if (existingUser) {
+            // If username exists, append a random string to make it unique
+            const uniqueUsername = `${username}_${Math.random()
+              .toString(36)
+              .substring(2, 5)}`;
+
+            // Create new anonymous user with unique username
+            const newUser = await prisma.user.create({
+              data: {
+                username: uniqueUsername,
+                email: null,
+                avatar: `/placeholder.svg?height=200&width=200&text=${uniqueUsername.charAt(
+                  0
+                )}`,
+                isAnonymous: true,
+                discordId: anonymousId,
+                discordUsername: uniqueUsername,
+                discordAvatar: null,
+              },
+            });
+
+            return {
+              id: newUser.id,
+              name: newUser.username,
+              email: null,
+              image: newUser.avatar,
+              discordId: newUser.discordId || undefined,
+              discordUsername: newUser.discordUsername || undefined,
+              discordAvatar: newUser.discordAvatar || undefined,
+              username: newUser.username,
+              avatar: newUser.avatar,
+            } as User;
+          }
+
+          // Create new anonymous user
+          const newUser = await prisma.user.create({
+            data: {
+              username: username,
+              email: null,
+              avatar: `/placeholder.svg?height=200&width=200&text=${username.charAt(
+                0
+              )}`,
+              isAnonymous: true,
+              discordId: anonymousId,
+              discordUsername: username,
+              discordAvatar: null,
+            },
+          });
+
+          return {
+            id: newUser.id,
+            name: newUser.username,
+            email: null,
+            image: newUser.avatar,
+            discordId: newUser.discordId || undefined,
+            discordUsername: newUser.discordUsername || undefined,
+            discordAvatar: newUser.discordAvatar || undefined,
+            username: newUser.username,
+            avatar: newUser.avatar,
+          } as User;
+        } catch (error) {
+          console.error("Error creating anonymous user:", error);
+          return null;
+        }
+      },
+    }),
+  ],
   callbacks: {
     async session({ session, token }) {
       console.log(
@@ -40,6 +134,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       );
       if (session.user) {
         try {
+          // Handle anonymous users differently
+          if (token.isAnonymous) {
+            session.user.id = token.id as string;
+            session.user.discordId = token.discordId as string;
+            session.user.discordUsername = token.discordUsername as string;
+            session.user.discordAvatar = token.discordAvatar as string;
+            session.user.username = token.username as string;
+            session.user.avatar = token.avatar as string;
+
+            console.log(
+              "[Auth.ts session callback] Returning anonymous session:",
+              JSON.stringify(session, null, 2)
+            );
+            return session;
+          }
+
+          // Regular user flow
           if (!token.id || !token.discordId) {
             console.error(
               "[Auth.ts session callback] Error: Missing required fields (id or discordId) in token:",
@@ -120,7 +231,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         JSON.stringify(profile, null, 2)
       );
 
-      if (account?.provider === "discord" && profile) {
+      // Handle anonymous login via credentials provider
+      if (account?.provider === "credentials") {
+        token.isAnonymous = true;
+        // Use type assertion to access custom properties
+        const customAccount = account as any;
+        token.id = customAccount.id;
+        token.discordId = customAccount.discordId;
+        token.discordUsername = customAccount.discordUsername;
+        token.discordAvatar = customAccount.discordAvatar;
+        token.username = customAccount.username;
+        token.avatar = customAccount.avatar;
+      }
+      // Handle Discord login
+      else if (account?.provider === "discord" && profile) {
         console.log("[Auth.ts jwt callback] Processing Discord login...");
         // Type assertion for Discord profile
         const discordProfile = profile as DiscordProfile;
