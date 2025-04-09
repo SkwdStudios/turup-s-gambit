@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { GameBoard } from "@/components/game-board";
@@ -18,12 +18,10 @@ import { ProtectedRoute } from "@/components/protected-route";
 import { GameControls } from "@/components/game-controls";
 import { GameInfo } from "@/components/game-info";
 import { motion } from "framer-motion";
-
-interface BaseMessage {
-  type: string;
-  payload?: any;
-  suit?: string;
-}
+import {
+  RealtimeGameStateProvider,
+  useRealtimeGameState,
+} from "@/hooks/use-realtime-game-state";
 
 interface GameRoomPageProps {
   params: Promise<{
@@ -31,18 +29,16 @@ interface GameRoomPageProps {
   }>;
 }
 
-export default function GameRoomPage({ params }: GameRoomPageProps) {
+function GameRoomContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const resolvedParams = React.use(params);
-  const roomId = resolvedParams.roomId;
+  const { roomId } = useParams<{ roomId: string }>();
   const mode = searchParams?.get("mode") || "classic";
 
   const [showReplay, setShowReplay] = useState(false);
   const [gameStatus, setGameStatus] = useState<
     "waiting" | "initial_deal" | "bidding" | "final_deal" | "playing" | "ended"
   >("waiting");
-  const [players, setPlayers] = useState<string[]>([]);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showShuffleAnimation, setShowShuffleAnimation] = useState(false);
   const [initialCardsDeal, setInitialCardsDeal] = useState(false);
@@ -54,9 +50,6 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
   });
   const [userVote, setUserVote] = useState<string | null>(null);
   const [votingComplete, setVotingComplete] = useState(false);
-  const [currentRoom, setCurrentRoom] = useState<GameRoom | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [allPlayersJoined, setAllPlayersJoined] = useState(false);
   const [trumpSuit, setTrumpSuit] = useState<string | null>(null);
 
   const { gameState, updateGameState } = useGameState(
@@ -65,209 +58,19 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
   const { recordMove, getReplayData } = useReplay();
   const { user } = useAuth();
 
-  const ws = useRef<WebSocket | null>(null);
+  // Use the Realtime Game State
+  const {
+    currentRoom,
+    players,
+    isConnected,
+    startGame,
+    playCard,
+    placeBid,
+    selectTrump,
+  } = useRealtimeGameState();
 
-  const sendMessage = (message: BaseMessage) => {
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      try {
-        console.log(`[WS Client] Sending message type: ${message.type}`);
-        ws.current.send(JSON.stringify(message));
-      } catch (e) {
-        console.error("[WS Client] Error sending message:", e);
-      }
-    } else {
-      console.warn(
-        "[WS Client] WebSocket not open. Cannot send message:",
-        message.type
-      );
-    }
-  };
-
-  useEffect(() => {
-    if (!roomId || !user) return;
-
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT_ATTEMPTS = 3;
-    const RECONNECT_DELAY = 1000;
-
-    const connectWebSocket = () => {
-      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        console.error("[WS Client] Max reconnection attempts reached");
-        return;
-      }
-
-      // First, ensure the WebSocket server is running
-      fetch("/api/socket")
-        .then(() => {
-          const wsProto =
-            window.location.protocol === "https:" ? "wss://" : "ws://";
-          const wsUrl = `${wsProto}${window.location.hostname}:3001/api/socket`;
-
-          console.log(`[WS Client] Attempting to connect to ${wsUrl}`);
-          ws.current = new WebSocket(wsUrl);
-          const currentWs = ws.current;
-
-          currentWs.onopen = () => {
-            console.log("[WS Client] WebSocket connection opened");
-            setIsConnected(true);
-            reconnectAttempts = 0; // Reset reconnect attempts on successful connection
-            sendMessage({
-              type: "room:join",
-              payload: {
-                roomId: roomId,
-                playerName: user?.email?.split("@")[0] || "Anonymous",
-              },
-            });
-          };
-
-          currentWs.onclose = (event: CloseEvent) => {
-            console.log(
-              "[WS Client] WebSocket connection closed. Code:",
-              event.code,
-              "Reason:",
-              event.reason
-            );
-            setIsConnected(false);
-            ws.current = null;
-
-            // Only attempt to reconnect if it wasn't a normal closure
-            if (event.code !== 1000) {
-              reconnectAttempts++;
-              if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                console.log(
-                  `[WS Client] Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`
-                );
-                setTimeout(connectWebSocket, RECONNECT_DELAY);
-              }
-            }
-          };
-
-          currentWs.onerror = (event: Event) => {
-            console.error("[WS Client] WebSocket error:", event);
-            setIsConnected(false);
-          };
-
-          currentWs.onmessage = (event: MessageEvent) => {
-            try {
-              const data = JSON.parse(event.data);
-              console.log(`[WS Client] Received message type: ${data.type}`);
-
-              switch (data.type) {
-                case "room:joined":
-                  console.log("[WS Client] Joined room:", data.payload);
-                  setCurrentRoom(data.payload);
-                  setPlayers(data.payload.players.map((p: Player) => p.name));
-                  break;
-
-                case "player:joined":
-                  console.log("[WS Client] Player joined:", data.payload);
-                  setPlayers((prev) => [...prev, data.payload.name]);
-                  if (currentRoom) {
-                    // Check if player already exists in the room
-                    const playerExists = currentRoom.players.some(
-                      (p) => p.name === data.payload.name
-                    );
-                    if (!playerExists) {
-                      setCurrentRoom({
-                        ...currentRoom,
-                        players: [...currentRoom.players, data.payload],
-                      });
-                    }
-                  }
-                  break;
-
-                case "player:left":
-                  console.log("[WS Client] Player left:", data.payload);
-                  setPlayers((prev) =>
-                    prev.filter((name) => name !== data.payload)
-                  );
-                  if (currentRoom) {
-                    setCurrentRoom({
-                      ...currentRoom,
-                      players: currentRoom.players.filter(
-                        (p) => p.name !== data.payload
-                      ),
-                    });
-                  }
-                  setAllPlayersJoined(false);
-                  break;
-
-                case "game:start":
-                  if (players.length === 4) {
-                    setAllPlayersJoined(true);
-                    setGameStatus("initial_deal");
-                    setShowShuffleAnimation(true);
-
-                    setTimeout(() => {
-                      setInitialCardsDeal(true);
-                      setShowShuffleAnimation(false);
-                      setGameStatus("bidding");
-                    }, 3000);
-                  }
-                  break;
-
-                case "game:trump_vote":
-                  console.log("[WS Client] Trump vote:", data);
-                  setTrumpVotes((prev) => ({
-                    ...prev,
-                    [data.suit]: (prev[data.suit] || 0) + 1,
-                  }));
-                  break;
-
-                case "game:trump_selected":
-                  console.log("[WS Client] Trump selected:", data.suit);
-                  setTrumpSuit(data.suit);
-                  setVotingComplete(true);
-                  updateGameState({ trumpSuit: data.suit });
-
-                  setTimeout(() => {
-                    setGameStatus("final_deal");
-                    setShowShuffleAnimation(true);
-
-                    setTimeout(() => {
-                      setInitialCardsDeal(false);
-                      setShowShuffleAnimation(false);
-                      setGameStatus("playing");
-                    }, 3000);
-                  }, 2000);
-                  break;
-
-                case "game:card_played":
-                  console.log("[WS Client] Card played:", data);
-                  break;
-
-                case "game:ended":
-                  console.log("[WS Client] Game ended:", data);
-                  setGameStatus("ended");
-                  break;
-
-                default:
-                  console.log("[WS Client] Unknown message type:", data.type);
-              }
-            } catch (error) {
-              console.error("[WS Client] Error parsing message:", error);
-            }
-          };
-        })
-        .catch((error) => {
-          console.error(
-            "[WS Client] Failed to initialize WebSocket server:",
-            error
-          );
-        });
-    };
-
-    connectWebSocket();
-
-    return () => {
-      console.log("[WS Client] Cleaning up WebSocket connection");
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.close(1000, "Component unmounting");
-      }
-      ws.current = null;
-      setIsConnected(false);
-    };
-  }, [roomId, user]);
+  // Check if all players have joined
+  const allPlayersJoined = players.length === 4;
 
   useEffect(() => {
     if (!user) {
@@ -275,8 +78,27 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
     }
   }, [user]);
 
+  // Handle game state changes based on currentRoom
+  useEffect(() => {
+    if (currentRoom) {
+      // Update game status based on room state
+      if (currentRoom.gameState.gamePhase === "bidding") {
+        setGameStatus("bidding");
+      } else if (currentRoom.gameState.gamePhase === "playing") {
+        setGameStatus("playing");
+      } else if (currentRoom.gameState.gamePhase === "ended") {
+        setGameStatus("ended");
+      }
+
+      // Update trump suit if available
+      if (currentRoom.gameState.trumpSuit) {
+        setTrumpSuit(currentRoom.gameState.trumpSuit);
+      }
+    }
+  }, [currentRoom]);
+  // Handle game start
   function handleStartGame() {
-    sendMessage({ type: "game:ready", payload: { roomId } });
+    startGame();
   }
 
   // Handle trump voting
@@ -284,40 +106,15 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
     if (userVote || votingComplete) return;
 
     setUserVote(suit);
-    sendMessage({
-      type: "game:trump_vote",
-      suit,
-    });
-
-    // For demo purposes, simulate other players voting
-    setTimeout(() => {
-      const otherSuits = ["hearts", "diamonds", "clubs", "spades"].filter(
-        (s) => s !== suit
-      );
-      const randomSuit =
-        otherSuits[Math.floor(Math.random() * otherSuits.length)];
-
-      sendMessage({
-        type: "game:trump_vote",
-        suit: randomSuit,
-      });
-
-      // Simulate server selecting trump
-      setTimeout(() => {
-        sendMessage({
-          type: "game:trump_selected",
-          suit: Math.random() > 0.5 ? suit : randomSuit,
-        });
-      }, 2000);
-    }, 1000);
+    selectTrump(suit);
   };
 
   function handlePlayCard(card: Card) {
-    sendMessage({ type: "game:play-card", payload: { roomId, card } });
+    playCard(card);
   }
 
   function handleBid(bid: number) {
-    sendMessage({ type: "game:bid", payload: { roomId, bid } });
+    placeBid(bid);
   }
 
   function handleEndGame() {
@@ -496,5 +293,16 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
         </div>
       </div>
     </ProtectedRoute>
+  );
+}
+
+export default function GameRoomPage({ params }: GameRoomPageProps) {
+  const resolvedParams = React.use(params);
+  const roomId = resolvedParams.roomId;
+
+  return (
+    <RealtimeGameStateProvider roomId={roomId}>
+      <GameRoomContent />
+    </RealtimeGameStateProvider>
   );
 }

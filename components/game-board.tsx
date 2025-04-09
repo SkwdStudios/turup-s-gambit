@@ -6,7 +6,7 @@ import { TurnTimer } from "@/components/turn-timer";
 import { InGameEmotes } from "@/components/in-game-emotes";
 import type { GameState } from "@/hooks/use-game-state";
 import type { Card as CardType } from "@/app/types/game";
-import { useWebSocket } from "@/hooks/use-websocket";
+import { useRealtimeGameState } from "@/hooks/use-realtime-game-state";
 
 interface GameBoardProps {
   gameMode: "classic" | "frenzy";
@@ -49,7 +49,7 @@ export function GameBoard({
     Array<{ id: number; emoji: string; player: string; timestamp: number }>
   >([]);
   const [localGameState, setLocalGameState] = useState<GameState | null>(null);
-  const { sendMessage, isConnected } = useWebSocket();
+  const { isConnected } = useRealtimeGameState();
 
   // Mock player hands - full deck and initial 5 cards
   const fullPlayerHand = [

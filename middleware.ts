@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-// import { auth } from "@/auth"; // Remove auth import
 
-// Change to a standard middleware function
 export function middleware(req: NextRequest) {
+  // Get the pathname of the request
+  const path = req.nextUrl.pathname;
+
   // Handle WebSocket upgrade requests
   if (req.headers.get("upgrade") === "websocket") {
     // Allow WebSocket connections to pass through
     return NextResponse.next();
+  }
+
+  // Handle WebSocket API requests for the old implementation
+  if (path === "/api/socket" && req.method === "GET") {
+    // Redirect to the new Realtime API
+    return NextResponse.redirect(new URL("/api/realtime", req.url));
   }
 
   // Continue processing all other requests
@@ -23,7 +30,9 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - realtime (Supabase Realtime)
      */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon.ico|realtime).*)",
+    "/api/:path*",
   ],
 };
