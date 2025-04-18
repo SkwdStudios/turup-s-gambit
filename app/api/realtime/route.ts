@@ -8,6 +8,18 @@ const gameManager = GameManager.getInstance();
 // Cache to track recently processed requests to prevent duplicates
 const processedRequests = new Map<string, number>();
 
+// Store pending messages for clients that might reconnect
+const pendingMessages = new Map<
+  string,
+  Array<{ timestamp: number; message: any }>
+>();
+
+// Maximum age for pending messages (5 minutes)
+const MAX_PENDING_MESSAGE_AGE = 5 * 60 * 1000;
+
+// Maximum time to wait for subscription (3 seconds)
+const SUBSCRIPTION_TIMEOUT = 3000;
+
 // Helper function to broadcast a message to a room
 async function broadcastToRoom(roomId: string, message: any) {
   try {
@@ -41,38 +53,94 @@ async function broadcastToRoom(roomId: string, message: any) {
       }
     }
 
-    const channelName = `room:${roomId}`;
-    const channel = supabase.channel(channelName, {
-      config: {
-        broadcast: { self: true },
-      },
+    // Store the message in pending messages for this room
+    if (!pendingMessages.has(roomId)) {
+      pendingMessages.set(roomId, []);
+    }
+
+    // Add message to pending list with timestamp
+    pendingMessages.get(roomId)!.push({
+      timestamp: now,
+      message: message,
     });
 
-    // Subscribe to the channel first
-    await new Promise<void>((resolve) => {
-      channel.subscribe((status) => {
-        console.log(`[Realtime API] Channel ${channelName} status:`, status);
-        if (status === "SUBSCRIBED") {
-          resolve();
-        }
+    // Clean up old messages
+    pendingMessages.set(
+      roomId,
+      pendingMessages
+        .get(roomId)!
+        .filter((item) => now - item.timestamp < MAX_PENDING_MESSAGE_AGE)
+    );
+
+    // Try to use Supabase Realtime with a timeout
+    let realtimeSuccess = false;
+    try {
+      const channelName = `room:${roomId}`;
+      const channel = supabase.channel(channelName, {
+        config: {
+          broadcast: { self: true },
+          presence: { key: "" }, // Enable presence to improve connection reliability
+        },
       });
-    });
 
-    // Then send the message
-    await channel.send({
-      type: "broadcast",
-      event: "message",
-      payload: message,
-    });
+      // Subscribe to the channel with a timeout
+      const subscriptionPromise = new Promise<boolean>((resolve) => {
+        channel.subscribe((status) => {
+          console.log(`[Realtime API] Channel ${channelName} status:`, status);
+          if (status === "SUBSCRIBED") {
+            resolve(true);
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            resolve(false);
+          }
+        });
+      });
 
-    console.log(`[Realtime API] Broadcasted to room ${roomId}:`, message.type);
+      // Add a timeout to the subscription promise
+      const timeoutPromise = new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), SUBSCRIPTION_TIMEOUT);
+      });
 
-    // Unsubscribe after sending
-    setTimeout(() => {
-      channel.unsubscribe();
-    }, 1000);
+      // Wait for either subscription or timeout
+      realtimeSuccess = await Promise.race([
+        subscriptionPromise,
+        timeoutPromise,
+      ]);
 
-    return true;
+      if (realtimeSuccess) {
+        // Then send the message
+        await channel.send({
+          type: "broadcast",
+          event: "message",
+          payload: message,
+        });
+
+        console.log(
+          `[Realtime API] Broadcasted to room ${roomId}:`,
+          message.type
+        );
+      } else {
+        console.log(
+          `[Realtime API] Failed to subscribe to channel ${channelName}, falling back to REST API`
+        );
+      }
+
+      // Unsubscribe after sending
+      setTimeout(() => {
+        channel.unsubscribe();
+      }, 1000);
+    } catch (realtimeError) {
+      console.error(
+        `[Realtime API] Error with Supabase Realtime for room ${roomId}:`,
+        realtimeError
+      );
+      realtimeSuccess = false;
+    }
+
+    // If Realtime failed, we'll rely on the REST API and client polling
+    // The message is already stored in pendingMessages, so it will be delivered
+    // when the client reconnects or polls for updates
+
+    return true; // We consider the operation successful even if Realtime failed
   } catch (error) {
     console.error(
       `[Realtime API] Error broadcasting to room ${roomId}:`,
@@ -80,6 +148,16 @@ async function broadcastToRoom(roomId: string, message: any) {
     );
     return false;
   }
+}
+
+// Helper function to get pending messages for a room - used by the GET endpoint
+async function getPendingMessagesForRoom(roomId: string) {
+  if (!pendingMessages.has(roomId)) {
+    return [];
+  }
+
+  // Return messages but don't clear the list - they'll be cleared after a timeout
+  return pendingMessages.get(roomId)!.map((item) => item.message);
 }
 
 export async function POST(req: Request) {
@@ -500,7 +578,7 @@ export async function POST(req: Request) {
       }
 
       case "game:select-trump": {
-        const { roomId, suit } = payload;
+        const { roomId, suit, botId } = payload;
         if (!roomId || !suit) {
           return NextResponse.json(
             { error: "Missing roomId or suit" },
@@ -516,19 +594,34 @@ export async function POST(req: Request) {
           );
         }
 
-        // Update game state with the trump suit
-        gameManager.updateGameState(roomId, { trumpSuit: suit });
-        const updatedRoom = gameManager.getRoom(roomId);
+        // Broadcast the vote to all clients
+        await broadcastToRoom(roomId, {
+          type: "game:trump-vote",
+          payload: { roomId, suit, botId },
+        });
 
-        if (updatedRoom) {
-          await broadcastToRoom(roomId, {
-            type: "game:trump-selected",
-            payload: { roomId, suit },
+        // Only process the trump selection for human players to avoid multiple selections
+        if (!botId) {
+          // Update the game state with the trump suit
+          gameManager.updateGameState(roomId, {
+            trumpSuit: suit,
+            gamePhase: "playing", // Move to playing phase after trump selection
           });
-          await broadcastToRoom(roomId, {
-            type: "game:state-updated",
-            payload: updatedRoom.gameState,
-          });
+          const updatedRoom = gameManager.getRoom(roomId);
+
+          if (updatedRoom) {
+            // After a delay, broadcast that the trump suit has been selected
+            setTimeout(async () => {
+              await broadcastToRoom(roomId, {
+                type: "game:trump-selected",
+                payload: { roomId, suit },
+              });
+              await broadcastToRoom(roomId, {
+                type: "game:state-updated",
+                payload: updatedRoom.gameState,
+              });
+            }, 3000); // Add a delay to allow for animations
+          }
         }
 
         return NextResponse.json({ success: true });
@@ -575,7 +668,17 @@ export async function POST(req: Request) {
   }
 }
 
-// GET endpoint to check if the API is running
-export async function GET() {
+// GET endpoint to check if the API is running or retrieve pending messages
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const roomId = url.searchParams.get("roomId");
+
+  // If roomId is provided, return pending messages for that room
+  if (roomId) {
+    const messages = await getPendingMessagesForRoom(roomId);
+    return NextResponse.json({ messages });
+  }
+
+  // Otherwise, just return API status
   return NextResponse.json({ status: "Realtime API is running" });
 }

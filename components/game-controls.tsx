@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Share } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { motion } from "framer-motion";
 
 interface GameControlsProps {
   roomId: string;
@@ -10,10 +13,23 @@ interface GameControlsProps {
 
 export function GameControls({ roomId }: GameControlsProps) {
   const router = useRouter();
+  const [isSharing, setIsSharing] = useState(false);
+  const [isCreatingNewGame, setIsCreatingNewGame] = useState(false);
 
   const handleShareGame = () => {
+    setIsSharing(true);
     const url = `${window.location.origin}/game/${roomId}`;
     navigator.clipboard.writeText(url);
+
+    // Show success state briefly
+    setTimeout(() => {
+      setIsSharing(false);
+    }, 1500);
+  };
+
+  const handleNewGame = () => {
+    setIsCreatingNewGame(true);
+    router.push("/game");
   };
 
   return (
@@ -24,16 +40,46 @@ export function GameControls({ roomId }: GameControlsProps) {
           variant="outline"
           className="w-full medieval-button flex items-center gap-2"
           onClick={handleShareGame}
+          disabled={isSharing}
         >
-          <Share size={16} />
-          <span>Share Game</span>
+          {isSharing ? (
+            <>
+              <LoadingSpinner size="sm" />
+              <motion.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                Copied!
+              </motion.span>
+            </>
+          ) : (
+            <>
+              <Share size={16} />
+              <span>Share Game</span>
+            </>
+          )}
         </Button>
         <Button
           variant="outline"
-          className="w-full medieval-button"
-          onClick={() => router.push("/game")}
+          className="w-full medieval-button flex items-center justify-center gap-2"
+          onClick={handleNewGame}
+          disabled={isCreatingNewGame}
         >
-          New Game
+          {isCreatingNewGame ? (
+            <>
+              <LoadingSpinner size="sm" />
+              <motion.span
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3 }}
+              >
+                Creating...
+              </motion.span>
+            </>
+          ) : (
+            "New Game"
+          )}
         </Button>
       </div>
     </div>

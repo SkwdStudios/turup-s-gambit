@@ -27,6 +27,7 @@ export interface Player {
   score: number;
   isReady: boolean;
   isHost: boolean;
+  isBot?: boolean;
 }
 
 export interface GameState {

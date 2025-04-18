@@ -7,6 +7,8 @@ import { InGameEmotes } from "@/components/in-game-emotes";
 import type { GameState } from "@/hooks/use-game-state";
 import type { Card as CardType } from "@/app/types/game";
 import { useRealtimeGameState } from "@/hooks/use-realtime-game-state";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface GameBoardProps {
   gameMode: "classic" | "frenzy";
@@ -25,6 +27,7 @@ interface GameBoardProps {
   onPlayCard?: (card: CardType) => void;
   onBid?: (bid: number) => void;
   roomId: string;
+  sendMessage?: (message: any) => void;
 }
 
 export function GameBoard({
@@ -38,6 +41,7 @@ export function GameBoard({
   onPlayCard,
   onBid,
   roomId,
+  sendMessage,
 }: GameBoardProps) {
   const [selectedCard, setSelectedCard] = useState<number | null>(null);
   const [centerCards, setCenterCards] = useState<
@@ -49,6 +53,8 @@ export function GameBoard({
     Array<{ id: number; emoji: string; player: string; timestamp: number }>
   >([]);
   const [localGameState, setLocalGameState] = useState<GameState | null>(null);
+  const [playingCardId, setPlayingCardId] = useState<number | null>(null);
+  const [cardPlayLoading, setCardPlayLoading] = useState(false);
   const { isConnected } = useRealtimeGameState();
 
   // Mock player hands - full deck and initial 5 cards
@@ -193,28 +199,45 @@ export function GameBoard({
   ]);
 
   const handleCardClick = (cardId: number) => {
-    if (gameStatus !== "playing" || currentPlayerIndex !== 0) return;
+    if (gameStatus !== "playing" || currentPlayerIndex !== 0 || cardPlayLoading)
+      return;
 
     setSelectedCard(cardId);
+    setPlayingCardId(cardId);
+    setCardPlayLoading(true);
 
     // Find the card in player's hand
     const card = playerHand.find((c) => c.id === cardId);
-    if (!card) return;
+    if (!card) {
+      setCardPlayLoading(false);
+      return;
+    }
 
-    // Add card to center
-    const playedCard = {
-      ...card,
-      playedBy: players[0], // First player is always the user
-    };
+    // Simulate network delay
+    setTimeout(() => {
+      // Add card to center
+      const playedCard = {
+        ...card,
+        playedBy: players[0], // First player is always the user
+      };
 
-    setCenterCards((prev) => [...prev, playedCard]);
+      setCenterCards((prev) => [...prev, playedCard]);
 
-    // Record the move
-    onRecordMove({
-      type: "playCard",
-      player: players[0],
-      card: playedCard,
-    });
+      // Record the move
+      onRecordMove({
+        type: "playCard",
+        player: players[0],
+        card: playedCard,
+      });
+
+      // If we have an onPlayCard callback, use it
+      if (onPlayCard) {
+        onPlayCard(card);
+      }
+
+      setCardPlayLoading(false);
+      setPlayingCardId(null);
+    }, 800); // Simulate a slight delay for the animation
   };
 
   const handleEmote = (emoji: string) => {
@@ -257,14 +280,8 @@ export function GameBoard({
     }
   }, [emotes]);
 
-  useEffect(() => {
-    if (isConnected) {
-      sendMessage({
-        type: "join",
-        roomId,
-      });
-    }
-  }, [isConnected, roomId, sendMessage]);
+  // Removed the join message effect as it's causing issues
+  // The player is already joined through the main game flow
 
   return (
     <div className="relative h-full min-h-[700px] border-2 border-primary/30 rounded-lg bg-card/80 backdrop-blur-sm p-6">
@@ -471,16 +488,24 @@ export function GameBoard({
                 onMouseEnter={() => setSelectedCard(card.id)}
                 onMouseLeave={() => setSelectedCard(null)}
               >
-                <Card
-                  suit={card.suit}
-                  value={card.value}
-                  onClick={() => handleCardClick(card.id)}
-                  disabled={
-                    centerCards.some((c) => c.playedBy === players[0]) ||
-                    currentPlayerIndex !== 0
-                  }
-                  is3D={true}
-                />
+                <div className="relative">
+                  <Card
+                    suit={card.suit}
+                    value={card.value}
+                    onClick={() => handleCardClick(card.id)}
+                    disabled={
+                      centerCards.some((c) => c.playedBy === players[0]) ||
+                      currentPlayerIndex !== 0 ||
+                      cardPlayLoading
+                    }
+                    is3D={true}
+                  />
+                  {playingCardId === card.id && cardPlayLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-md backdrop-blur-sm">
+                      <LoadingSpinner size="sm" variant="primary" />
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
         </div>

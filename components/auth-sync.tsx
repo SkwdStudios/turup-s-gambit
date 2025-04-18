@@ -35,26 +35,32 @@ export function AuthSync({}: AuthSyncProps) {
 
       const discordUsername = session.user.name;
       const discordAvatar = session.user.image;
+      const isAnonymous = session.user.isAnonymous === true;
+
+      // Generate a unique username if needed
+      let username =
+        session.user.username ||
+        discordUsername ||
+        session.user.email?.split("@")[0];
+
+      // For anonymous users, ensure we have a valid username
+      if (!username || username.trim() === "") {
+        username = `Guest_${Math.floor(Math.random() * 10000)}`;
+      }
 
       return {
-        id: userId,
-        username:
-          session.user.username ||
-          discordUsername ||
-          session.user.email?.split("@")[0] ||
-          "User",
-        name: discordUsername || "User",
+        username: username,
+        name: discordUsername || username,
         email: session.user.email,
         avatar:
           discordAvatar ||
-          `/placeholder.svg?text=${(discordUsername || "U").charAt(0)}`,
-        image:
-          discordAvatar ||
-          `/placeholder.svg?text=${(discordUsername || "U").charAt(0)}`,
-        isAnonymous: false,
-        discordId: userId,
-        discordUsername: discordUsername,
-        discordAvatar: discordAvatar,
+          `/placeholder.svg?height=200&width=200&text=${(
+            username || "U"
+          ).charAt(0)}`,
+        isAnonymous: isAnonymous,
+        discordId: isAnonymous ? undefined : userId,
+        discordUsername: isAnonymous ? undefined : discordUsername,
+        discordAvatar: isAnonymous ? undefined : discordAvatar,
       };
     },
     [session]
@@ -115,9 +121,23 @@ export function AuthSync({}: AuthSyncProps) {
     lastSyncRef.current = now;
     prevSessionUserIdRef.current = currentUserId;
 
-    // Only proceed if authenticated with valid user and ID
-    if (status === "authenticated" && session?.user && currentUserId) {
+    // Handle both authenticated and anonymous users
+    if (status === "authenticated" && session?.user) {
       try {
+        // For anonymous users, we don't need to fetch from DB
+        if (session.user.isAnonymous) {
+          console.log("[AuthSync] Anonymous user, skipping DB sync");
+          syncInProgressRef.current = false;
+          return;
+        }
+
+        // Only proceed with DB operations for authenticated users with valid ID
+        if (!currentUserId) {
+          console.error("[AuthSync] Authenticated user missing ID");
+          syncInProgressRef.current = false;
+          return;
+        }
+
         // Fetch user from DB
         const existingUserResponse = await fetch(`/api/users/${currentUserId}`);
 
@@ -128,38 +148,51 @@ export function AuthSync({}: AuthSyncProps) {
             console.error(
               "[AuthSync] Failed to create user: Invalid session data"
             );
+            syncInProgressRef.current = false;
             return;
           }
 
-          const createResponse = await fetch("/api/users", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(newUser),
-          });
+          console.log("[AuthSync] Creating new user:", newUser.username);
 
-          if (!createResponse.ok) {
-            console.error(
-              "[AuthSync] Failed to create user:",
-              await createResponse.json()
-            );
-          } else {
-            const createdUser = await createResponse.json();
-            // Update session with created user data
-            await updateSession({
-              ...session,
-              user: { ...session.user, ...createdUser },
+          try {
+            const createResponse = await fetch("/api/users", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(newUser),
             });
-            // Cache the updated session
-            updateSessionCache(currentUserId, {
-              ...session.user,
-              ...createdUser,
-            });
+
+            if (!createResponse.ok) {
+              const errorData = await createResponse.json();
+              console.error("[AuthSync] Failed to create user:", errorData);
+            } else {
+              const createdUser = await createResponse.json();
+              console.log(
+                "[AuthSync] User created successfully:",
+                createdUser.username
+              );
+
+              // Update session with created user data
+              await updateSession({
+                ...session,
+                user: { ...session.user, ...createdUser },
+              });
+
+              // Cache the updated session
+              updateSessionCache(currentUserId, {
+                ...session.user,
+                ...createdUser,
+              });
+            }
+          } catch (createError) {
+            console.error("[AuthSync] Error creating user:", createError);
           }
         } else if (existingUserResponse.ok) {
           // User exists, check if session needs updating
           const existingUser: User = await existingUserResponse.json();
+          console.log("[AuthSync] Found existing user:", existingUser.username);
 
           if (shouldUpdateSession(session.user, existingUser)) {
+            console.log("[AuthSync] Updating session with DB data");
             // Update session with DB data
             await updateSession({
               ...session,
@@ -172,6 +205,7 @@ export function AuthSync({}: AuthSyncProps) {
             });
           } else {
             // Session is up-to-date, just update cache
+            console.log("[AuthSync] Session is up-to-date");
             updateSessionCache(currentUserId, session.user);
           }
         } else {

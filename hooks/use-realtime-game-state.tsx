@@ -9,6 +9,7 @@ import {
   useRef,
 } from "react";
 import { useSupabaseRealtime } from "./use-supabase-realtime";
+import type { BroadcastMessage } from "./use-supabase-realtime";
 import { GameRoom, Player, GameState } from "@/app/types/game";
 import { useAuth } from "./use-auth";
 
@@ -23,6 +24,7 @@ interface GameStateContextType {
   playCard: (card: any) => void;
   placeBid: (bid: number) => void;
   selectTrump: (suit: string) => void;
+  sendMessage: (message: BroadcastMessage) => Promise<boolean>;
 }
 
 const GameStateContext = createContext<GameStateContextType | undefined>(
@@ -37,7 +39,8 @@ export function RealtimeGameStateProvider({
   roomId: string;
 }) {
   const { user } = useAuth();
-  const { isConnected, sendMessage, messages } = useSupabaseRealtime(roomId);
+  const { isConnected, sendMessage, messages, setMessages } =
+    useSupabaseRealtime(roomId);
   const [currentRoom, setCurrentRoom] = useState<GameRoom | null>(null);
   const [players, setPlayers] = useState<string[]>([]);
 
@@ -259,6 +262,7 @@ export function RealtimeGameStateProvider({
               .replace(/\s+/g, "_")
               .toLowerCase()}_${Math.random().toString(36).substring(2, 6)}`;
           const isHost = latestMessage.payload.isHost || false;
+          const isBot = latestMessage.payload.isBot || false;
 
           const playerExists = currentRoom.players.some(
             (p) => p.name === playerName
@@ -266,14 +270,25 @@ export function RealtimeGameStateProvider({
 
           if (!playerExists) {
             console.log("[GameState] Adding new player to room:", playerName);
+            // Check if this is the first player (should be host)
+            const shouldBeHost = currentRoom.players.length === 0 || isHost;
+
             const newPlayer = {
               id: playerId,
               name: playerName,
               hand: [],
               score: 0,
               isReady: false,
-              isHost: isHost || currentRoom.players.length === 0,
+              isHost: shouldBeHost,
+              isBot: isBot,
             };
+
+            console.log(
+              "Adding player to room:",
+              playerName,
+              "isHost:",
+              shouldBeHost
+            );
 
             setCurrentRoom((prevRoom) => {
               // Double-check to prevent race conditions
@@ -291,6 +306,7 @@ export function RealtimeGameStateProvider({
                   ...updatedPlayers[existingPlayerIndex],
                   id: playerId, // Use the ID from the message
                   isHost: isHost, // Update host status
+                  isBot: isBot, // Update bot status
                 };
 
                 return {
@@ -348,6 +364,7 @@ export function RealtimeGameStateProvider({
                   ...updatedPlayers[playerIndex],
                   id: playerId, // Use the ID from the message
                   isHost: isHost, // Update host status
+                  isBot: isBot, // Update bot status
                 };
 
                 return {
@@ -376,15 +393,20 @@ export function RealtimeGameStateProvider({
             `player_${playerName
               .replace(/\s+/g, "_")
               .toLowerCase()}_${Math.random().toString(36).substring(2, 6)}`;
+          const isBot = latestMessage.payload.isBot || false;
 
+          // Always make the first player the host
           const newPlayer = {
             id: playerId,
             name: playerName,
             hand: [],
             score: 0,
             isReady: false,
-            isHost: latestMessage.payload.isHost || true,
+            isHost: true, // First player is always host
+            isBot: isBot,
           };
+
+          console.log("Creating new room with host:", playerName);
 
           const roomId = latestMessage.payload.roomId;
           if (!roomId) {
@@ -405,7 +427,7 @@ export function RealtimeGameStateProvider({
               currentBidder: null,
               trickCards: {},
               roundNumber: 0,
-              gamePhase: "waiting",
+              gamePhase: "waiting" as const,
             },
             createdAt: Date.now(),
             lastActivity: Date.now(),
@@ -470,6 +492,39 @@ export function RealtimeGameStateProvider({
         }
         break;
 
+      case "game:trump-vote":
+        console.log("[GameState] Trump vote received:", latestMessage.payload);
+        // A player or bot has voted for a trump suit
+        // We don't need to update the game state here, just acknowledge the vote
+        // The UI will handle showing the vote animation
+        break;
+
+      case "game:trump-selected":
+        console.log("[GameState] Trump suit selected:", latestMessage.payload);
+        // Update the game state with the selected trump suit
+        if (currentRoom) {
+          setCurrentRoom((prevRoom) => {
+            if (!prevRoom) return currentRoom;
+            return {
+              ...prevRoom,
+              gameState: {
+                ...prevRoom.gameState,
+                trumpSuit: latestMessage.payload.suit,
+                gamePhase: "playing",
+              },
+            };
+          });
+        }
+        break;
+
+      case "game:select-trump":
+        // We don't need to handle this message type in the client
+        // It's only used by the server
+        console.log(
+          "[GameState] Ignoring game:select-trump message, handled by server"
+        );
+        break;
+
       default:
         console.log("[GameState] Unknown message type:", latestMessage.type);
     }
@@ -477,7 +532,7 @@ export function RealtimeGameStateProvider({
 
   // Join a room - completely removed to prevent any manual joining
   // We'll only use the auto-join mechanism
-  const joinRoom = (roomId: string, playerName: string) => {
+  const joinRoom = (_roomId: string, _playerName: string) => {
     // This function is intentionally disabled to prevent duplicate joins
     console.log("[GameState] Manual room joining is disabled");
     return;
@@ -602,6 +657,39 @@ export function RealtimeGameStateProvider({
     }
   }, [roomId]);
 
+  // Poll for updates if not connected
+  useEffect(() => {
+    if (isConnected || !roomId) return;
+
+    console.log("[GameState] Not connected, polling for updates...");
+
+    // Set up polling interval
+    const pollInterval = setInterval(async () => {
+      try {
+        // Fetch pending messages from the API
+        const response = await fetch(`/api/realtime?roomId=${roomId}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.messages && Array.isArray(data.messages)) {
+            console.log(`[GameState] Polled ${data.messages.length} messages`);
+
+            // Process each message
+            for (const message of data.messages) {
+              setMessages((prev: BroadcastMessage[]) => [...prev, message]);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("[GameState] Error polling for updates:", error);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => {
+      // Clean up polling
+      clearInterval(pollInterval);
+    };
+  }, [isConnected, roomId]);
+
   // Auto-join room when connected - but only once
   useEffect(() => {
     // Skip if not connected or no room ID
@@ -650,16 +738,24 @@ export function RealtimeGameStateProvider({
 
     // Send a single join message
     setTimeout(() => {
-      // Send player:joined message
+      // Send player:joined message with isHost=true for the first player
       sendMessage({
         type: "player:joined",
-        payload: { playerName, roomId },
+        payload: {
+          playerName,
+          roomId,
+          isHost: currentRoom ? currentRoom.players.length === 0 : true,
+        },
       });
 
-      // Also send room:join message directly
+      // Also send room:join message directly with isHost flag
       sendMessage({
         type: "room:join",
-        payload: { roomId, playerName },
+        payload: {
+          roomId,
+          playerName,
+          isHost: currentRoom ? currentRoom.players.length === 0 : true,
+        },
       });
 
       // Request a full state update from the server
@@ -684,6 +780,7 @@ export function RealtimeGameStateProvider({
     playCard,
     placeBid,
     selectTrump,
+    sendMessage,
   };
 
   return (

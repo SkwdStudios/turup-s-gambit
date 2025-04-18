@@ -83,14 +83,21 @@ export class GameManager {
         .toString(36)
         .substring(2, 6)}`;
 
+    // Check if this is the first player (should be host)
+    const isFirstPlayer = room.players.length === 0;
+
     const newPlayer: Player = {
       id,
       name: playerName,
       hand: [],
       score: 0,
       isReady: false,
-      isHost: room.players.length === 0,
+      isHost: isFirstPlayer, // First player is always the host
     };
+
+    console.log(
+      `Adding player ${playerName} to room ${room.id}, isHost: ${isFirstPlayer}`
+    );
 
     room.players.push(newPlayer);
     room.lastActivity = Date.now();
