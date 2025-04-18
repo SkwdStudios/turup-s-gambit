@@ -252,10 +252,12 @@ export function RealtimeGameStateProvider({
             break;
           }
 
-          // Get player ID from payload or generate one
+          // Get player ID from payload or generate a consistent one
           const playerId =
             latestMessage.payload.id ||
-            Math.random().toString(36).substring(2, 9);
+            `player_${playerName
+              .replace(/\s+/g, "_")
+              .toLowerCase()}_${Math.random().toString(36).substring(2, 6)}`;
           const isHost = latestMessage.payload.isHost || false;
 
           const playerExists = currentRoom.players.some(
@@ -276,9 +278,28 @@ export function RealtimeGameStateProvider({
             setCurrentRoom((prevRoom) => {
               // Double-check to prevent race conditions
               if (!prevRoom) return currentRoom;
-              if (prevRoom.players.some((p) => p.name === playerName))
-                return prevRoom;
 
+              // Check if player already exists by name
+              const existingPlayerIndex = prevRoom.players.findIndex(
+                (p) => p.name === playerName
+              );
+
+              if (existingPlayerIndex >= 0) {
+                // Update the existing player with any new information
+                const updatedPlayers = [...prevRoom.players];
+                updatedPlayers[existingPlayerIndex] = {
+                  ...updatedPlayers[existingPlayerIndex],
+                  id: playerId, // Use the ID from the message
+                  isHost: isHost, // Update host status
+                };
+
+                return {
+                  ...prevRoom,
+                  players: updatedPlayers,
+                };
+              }
+
+              // Add the new player
               return {
                 ...prevRoom,
                 players: [...prevRoom.players, newPlayer],
@@ -289,11 +310,54 @@ export function RealtimeGameStateProvider({
               if (prev.includes(playerName)) return prev;
               return [...prev, playerName];
             });
+
+            // Store the updated room state in localStorage
+            try {
+              if (typeof window !== "undefined" && currentRoom) {
+                const updatedRoom = {
+                  ...currentRoom,
+                  players: [...currentRoom.players, newPlayer],
+                };
+                localStorage.setItem(
+                  `room-${currentRoom.id}`,
+                  JSON.stringify(updatedRoom)
+                );
+              }
+            } catch (e) {
+              console.error(
+                "[GameState] Failed to store room state in localStorage:",
+                e
+              );
+            }
           } else {
             console.log(
               "[GameState] Player already exists in room:",
               playerName
             );
+
+            // Update the player's information if needed
+            setCurrentRoom((prevRoom) => {
+              if (!prevRoom) return currentRoom;
+
+              const playerIndex = prevRoom.players.findIndex(
+                (p) => p.name === playerName
+              );
+              if (playerIndex >= 0) {
+                const updatedPlayers = [...prevRoom.players];
+                updatedPlayers[playerIndex] = {
+                  ...updatedPlayers[playerIndex],
+                  id: playerId, // Use the ID from the message
+                  isHost: isHost, // Update host status
+                };
+
+                return {
+                  ...prevRoom,
+                  players: updatedPlayers,
+                };
+              }
+
+              return prevRoom;
+            });
           }
         } else if (!currentRoom && latestMessage.payload) {
           // If we don't have a room yet, create one with this player
@@ -307,16 +371,29 @@ export function RealtimeGameStateProvider({
             break;
           }
 
+          const playerId =
+            latestMessage.payload.id ||
+            `player_${playerName
+              .replace(/\s+/g, "_")
+              .toLowerCase()}_${Math.random().toString(36).substring(2, 6)}`;
+
           const newPlayer = {
-            id:
-              latestMessage.payload.id ||
-              Math.random().toString(36).substring(2, 9),
+            id: playerId,
             name: playerName,
             hand: [],
             score: 0,
             isReady: false,
-            isHost: true,
+            isHost: latestMessage.payload.isHost || true,
           };
+
+          const roomId = latestMessage.payload.roomId;
+          if (!roomId) {
+            console.warn(
+              "[GameState] Player joined without a roomId",
+              latestMessage.payload
+            );
+            break;
+          }
 
           const newRoom = {
             id: roomId,
@@ -336,6 +413,18 @@ export function RealtimeGameStateProvider({
 
           setCurrentRoom(newRoom);
           setPlayers([playerName]);
+
+          // Store the room state in localStorage
+          try {
+            if (typeof window !== "undefined") {
+              localStorage.setItem(`room-${roomId}`, JSON.stringify(newRoom));
+            }
+          } catch (e) {
+            console.error(
+              "[GameState] Failed to store room state in localStorage:",
+              e
+            );
+          }
         }
         break;
 

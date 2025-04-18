@@ -198,30 +198,33 @@ export async function POST(req: Request) {
           },
         });
 
-        // Also send individual player:joined messages for all existing players to the new player
-        // This ensures the new player sees all existing players
-        if (roomState.players.length > 1) {
+        // Send a full room state update to ensure all clients have the complete player list
+        await broadcastToRoom(roomId, {
+          type: "room:full-state",
+          payload: roomState,
+        });
+
+        // Also send individual player:joined messages for all existing players to ensure everyone is in sync
+        if (roomState.players.length > 0) {
           console.log(
-            `[Realtime API] Sending existing players to ${playerName}`
+            `[Realtime API] Broadcasting all players in room ${roomId}`
           );
 
-          // For each existing player (except the new one), send a player:joined message
+          // For each player in the room, send a player:joined message
           for (const player of roomState.players) {
-            if (player.name !== playerName) {
-              console.log(
-                `[Realtime API] Sending player:joined for ${player.name} to ${playerName}`
-              );
+            console.log(
+              `[Realtime API] Broadcasting player:joined for ${player.name}`
+            );
 
-              await broadcastToRoom(roomId, {
-                type: "player:joined",
-                payload: {
-                  name: player.name,
-                  id: player.id,
-                  isHost: player.isHost,
-                  roomId: roomId,
-                },
-              });
-            }
+            await broadcastToRoom(roomId, {
+              type: "player:joined",
+              payload: {
+                name: player.name,
+                id: player.id,
+                isHost: player.isHost,
+                roomId: roomId,
+              },
+            });
           }
         }
 
@@ -313,38 +316,34 @@ export async function POST(req: Request) {
           payload: roomState,
         });
 
-        // Also send individual player:joined messages for all existing players to the new player
-        // This ensures the new player sees all existing players
-        if (roomState.players.length > 1) {
+        // Also broadcast all existing players to ensure everyone is in sync
+        if (roomState.players.length > 0) {
           console.log(
-            `[Realtime API] Sending existing players to ${playerName}`
+            `[Realtime API] Broadcasting all players in room ${roomId}`
           );
 
-          // Get the client ID for the new player
-          const clients = await supabase.getChannels();
-          const roomChannel = clients.find((c) => c.name === `room:${roomId}`);
+          // For each player in the room, send a player:joined message
+          for (const player of roomState.players) {
+            if (player.name !== playerName) {
+              // Skip the player who just joined as we already sent their info
+              console.log(
+                `[Realtime API] Broadcasting player:joined for ${player.name}`
+              );
 
-          if (roomChannel) {
-            // For each existing player (except the new one), send a player:joined message
-            for (const player of roomState.players) {
-              if (player.name !== playerName) {
-                console.log(
-                  `[Realtime API] Sending player:joined for ${player.name} to ${playerName}`
-                );
-
-                await broadcastToRoom(roomId, {
-                  type: "player:joined",
-                  payload: {
-                    name: player.name,
-                    id: player.id,
-                    isHost: player.isHost,
-                    roomId: roomId,
-                  },
-                });
-              }
+              await broadcastToRoom(roomId, {
+                type: "player:joined",
+                payload: {
+                  name: player.name,
+                  id: player.id,
+                  isHost: player.isHost,
+                  roomId: roomId,
+                },
+              });
             }
           }
         }
+
+        // We've already broadcast all players above, so no need to do it again
 
         // Start game if room is full
         if (roomState.players.length === 4) {

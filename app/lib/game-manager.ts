@@ -55,7 +55,11 @@ export class GameManager {
     return this.createNewRoom();
   }
 
-  public addPlayerToRoom(roomId: string, playerName: string): Player {
+  public addPlayerToRoom(
+    roomId: string,
+    playerName: string,
+    playerId?: string
+  ): Player {
     const room = this.rooms.get(roomId);
     if (!room) {
       throw new Error("Room not found");
@@ -65,8 +69,22 @@ export class GameManager {
       throw new Error("Room is full");
     }
 
+    // Check if player already exists in the room
+    const existingPlayer = room.players.find((p) => p.name === playerName);
+    if (existingPlayer) {
+      return existingPlayer;
+    }
+
+    // Generate a deterministic ID based on the player name if not provided
+    // This ensures the same player always gets the same ID
+    const id =
+      playerId ||
+      `player_${playerName.replace(/\s+/g, "_").toLowerCase()}_${Math.random()
+        .toString(36)
+        .substring(2, 6)}`;
+
     const newPlayer: Player = {
-      id: Math.random().toString(36).substring(2, 9),
+      id,
       name: playerName,
       hand: [],
       score: 0,
