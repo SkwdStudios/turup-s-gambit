@@ -84,8 +84,16 @@ export default function ProfilePage() {
 
       <div className="absolute inset-0 -z-10">
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-30 dark:opacity-20"
-          style={{ backgroundImage: "url('/assets/castle-hall.jpg')" }}
+          className="absolute inset-0 opacity-30 dark:opacity-20"
+          style={{
+            backgroundImage: "url('/assets/castle-hall.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background" />
       </div>
@@ -96,11 +104,19 @@ export default function ProfilePage() {
             <div className="relative">
               <Avatar className="w-32 h-32 border-4 border-primary">
                 <AvatarImage
-                  src={authUser.avatar || authUser.image || `/placeholder.svg?height=200&width=200&text=${(authUser.username || authUser.name || 'U').charAt(0)}`}
-                  alt={authUser.username || authUser.name || 'User'}
+                  src={
+                    authUser.avatar ||
+                    authUser.image ||
+                    `/placeholder.svg?height=200&width=200&text=${(
+                      authUser.username ||
+                      authUser.name ||
+                      "U"
+                    ).charAt(0)}`
+                  }
+                  alt={authUser.username || authUser.name || "User"}
                 />
                 <AvatarFallback className="text-4xl font-medieval">
-                  {(authUser.username || authUser.name || 'U').charAt(0)}
+                  {(authUser.username || authUser.name || "U").charAt(0)}
                 </AvatarFallback>
               </Avatar>
               <div className="absolute -bottom-2 -right-2 bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full font-medieval">

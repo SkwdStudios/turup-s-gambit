@@ -76,8 +76,16 @@ export default function GamePage() {
 
         <div className="absolute inset-0 -z-10">
           <div
-            className="absolute inset-0 bg-cover bg-center opacity-40 dark:opacity-30" // Increased brightness
-            style={{ backgroundImage: "url('/assets/tavern-background.jpg')" }}
+            className="absolute inset-0 opacity-40 dark:opacity-30" // Increased brightness
+            style={{
+              backgroundImage: "url('/assets/tavern-background.jpg')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background" />
         </div>
@@ -93,8 +101,16 @@ export default function GamePage() {
 
       <div className="absolute inset-0 -z-10">
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-40 dark:opacity-30" // Increased brightness
-          style={{ backgroundImage: "url('/assets/tavern-background.jpg')" }}
+          className="absolute inset-0 opacity-40 dark:opacity-30" // Increased brightness
+          style={{
+            backgroundImage: "url('/assets/tavern-background.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background" />
       </div>

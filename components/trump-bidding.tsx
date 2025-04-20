@@ -150,7 +150,9 @@ export function TrumpBidding({
       ) : (
         <div className="text-center">
           <p className="text-sm text-muted-foreground mb-2">
-            Choose the suit you want to be trump for this game
+            You have been dealt 5 initial cards. Choose the suit you want to be
+            trump for this game. After trump selection, you will receive 8 more
+            cards.
           </p>
           <motion.div
             animate={{ y: [0, -5, 0] }}

@@ -495,8 +495,11 @@ export function RealtimeGameStateProvider({
       case "game:trump-vote":
         console.log("[GameState] Trump vote received:", latestMessage.payload);
         // A player or bot has voted for a trump suit
-        // We don't need to update the game state here, just acknowledge the vote
-        // The UI will handle showing the vote animation
+        // Forward this message to the UI via window.postMessage
+        if (typeof window !== "undefined") {
+          console.log("[GameState] Broadcasting trump vote to UI");
+          window.postMessage(latestMessage, window.location.origin);
+        }
         break;
 
       case "game:trump-selected":
@@ -523,6 +526,48 @@ export function RealtimeGameStateProvider({
         console.log(
           "[GameState] Ignoring game:select-trump message, handled by server"
         );
+        break;
+
+      case "game:play-card":
+        // This is an outgoing message, no need to handle it directly
+        console.log(
+          "[GameState] Outgoing play card message:",
+          latestMessage.payload
+        );
+        break;
+
+      case "game:card-played":
+        // A player has played a card
+        console.log("[GameState] Card played:", latestMessage.payload);
+        if (currentRoom && latestMessage.payload) {
+          const { playerId, card } = latestMessage.payload;
+
+          // Update the game state with the played card
+          setCurrentRoom((prevRoom) => {
+            if (!prevRoom) return currentRoom;
+
+            // Add the card to the trick cards
+            const updatedTrickCards = {
+              ...prevRoom.gameState.trickCards,
+              [playerId]: card,
+            };
+
+            // Update the game state
+            return {
+              ...prevRoom,
+              gameState: {
+                ...prevRoom.gameState,
+                trickCards: updatedTrickCards,
+              },
+            };
+          });
+
+          // Forward this message to the UI via window.postMessage
+          if (typeof window !== "undefined") {
+            console.log("[GameState] Broadcasting card played to UI");
+            window.postMessage(latestMessage, window.location.origin);
+          }
+        }
         break;
 
       default:
@@ -589,9 +634,30 @@ export function RealtimeGameStateProvider({
       return;
     }
 
+    // Get the current user's player ID if available
+    let playerId = null;
+    if (user && currentRoom.players) {
+      const currentPlayer = currentRoom.players.find(
+        (p) =>
+          p.name === user.username ||
+          p.name === user.name ||
+          (user.email && p.name === user.email.split("@")[0])
+      );
+      if (currentPlayer) {
+        playerId = currentPlayer.id;
+      }
+    }
+
+    if (!playerId) {
+      console.warn("[GameState] Cannot play card, player ID not found");
+      return;
+    }
+
+    console.log(`[GameState] Playing card for player: ${playerId}`, card);
+
     sendMessage({
       type: "game:play-card",
-      payload: { roomId, card },
+      payload: { roomId, card, playerId },
     });
   };
 
@@ -615,9 +681,29 @@ export function RealtimeGameStateProvider({
       return;
     }
 
+    // Get the current user's player ID if available
+    let playerId = null;
+    if (user && currentRoom.players) {
+      const currentPlayer = currentRoom.players.find(
+        (p) =>
+          p.name === user.username ||
+          p.name === user.name ||
+          (user.email && p.name === user.email.split("@")[0])
+      );
+      if (currentPlayer) {
+        playerId = currentPlayer.id;
+      }
+    }
+
+    console.log(
+      `[GameState] Selecting trump suit: ${suit} for player: ${
+        playerId || "unknown"
+      }`
+    );
+
     sendMessage({
       type: "game:select-trump",
-      payload: { roomId, suit },
+      payload: { roomId, suit, playerId },
     });
   };
 
@@ -736,33 +822,85 @@ export function RealtimeGameStateProvider({
 
     console.log("[GameState] Auto-joining room as:", playerName);
 
-    // Send a single join message
+    // First, create the room if it doesn't exist
+    // This helps prevent the "Room not found" error
+    const joinRoom = async () => {
+      try {
+        console.log("[GameState] Creating/joining room:", roomId);
+
+        // First, try to create the room
+        // This will succeed if the room doesn't exist, or return an error if it does
+        const createResult = await sendMessage({
+          type: "room:create",
+          payload: {
+            roomId,
+            playerName,
+            isHost: true, // First player to create the room is the host
+          },
+        });
+
+        console.log(
+          "[GameState] Room creation result:",
+          createResult ? "Success" : "Failed"
+        );
+
+        // Wait a bit to ensure the room is created
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        // Send player:joined message
+        const joinPlayerResult = await sendMessage({
+          type: "player:joined",
+          payload: {
+            playerName,
+            roomId,
+            isHost: currentRoom ? currentRoom.players.length === 0 : true,
+          },
+        });
+
+        console.log(
+          "[GameState] Player joined result:",
+          joinPlayerResult ? "Success" : "Failed"
+        );
+
+        // Wait a bit to ensure the player is added
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        // Also send room:join message directly with isHost flag
+        const joinRoomResult = await sendMessage({
+          type: "room:join",
+          payload: {
+            roomId,
+            playerName,
+            isHost: currentRoom ? currentRoom.players.length === 0 : true,
+          },
+        });
+
+        console.log(
+          "[GameState] Room join result:",
+          joinRoomResult ? "Success" : "Failed"
+        );
+
+        // Wait a bit to ensure the join is processed
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        // Request a full state update from the server
+        const stateResult = await sendMessage({
+          type: "room:request-state",
+          payload: { roomId },
+        });
+
+        console.log(
+          "[GameState] State request result:",
+          stateResult ? "Success" : "Failed"
+        );
+      } catch (error) {
+        console.error("[GameState] Error joining room:", error);
+      }
+    };
+
+    // Start the join process with a slight delay
     setTimeout(() => {
-      // Send player:joined message with isHost=true for the first player
-      sendMessage({
-        type: "player:joined",
-        payload: {
-          playerName,
-          roomId,
-          isHost: currentRoom ? currentRoom.players.length === 0 : true,
-        },
-      });
-
-      // Also send room:join message directly with isHost flag
-      sendMessage({
-        type: "room:join",
-        payload: {
-          roomId,
-          playerName,
-          isHost: currentRoom ? currentRoom.players.length === 0 : true,
-        },
-      });
-
-      // Request a full state update from the server
-      sendMessage({
-        type: "room:request-state",
-        payload: { roomId },
-      });
+      joinRoom();
     }, 500);
 
     // Clean up function - we intentionally don't reset the joined flag

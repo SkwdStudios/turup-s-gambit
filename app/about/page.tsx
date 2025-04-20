@@ -38,8 +38,16 @@ export default function AboutPage() {
 
       <div className="absolute inset-0 -z-10">
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-30 dark:opacity-20"
-          style={{ backgroundImage: "url('/assets/medieval-library.jpg')" }}
+          className="absolute inset-0 opacity-30 dark:opacity-20"
+          style={{
+            backgroundImage: "url('/assets/medieval-library.jpg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background" />
       </div>

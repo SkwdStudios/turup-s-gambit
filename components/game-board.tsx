@@ -109,55 +109,64 @@ export function GameBoard({
     }
   };
 
-  // Simulate AI players playing cards
+  // Listen for card played events from the server
   useEffect(() => {
-    if (
-      gameStatus === "playing" &&
-      centerCards.length > 0 &&
-      centerCards.length < 4
-    ) {
-      // Set current player index based on number of cards played
-      setCurrentPlayerIndex(centerCards.length);
-      setIsTimerActive(true);
+    if (gameStatus !== "playing") return;
 
-      const timer = setTimeout(() => {
-        const aiPlayer = players[centerCards.length];
-        const randomCard = {
-          id: 100 + centerCards.length,
-          suit: ["hearts", "diamonds", "clubs", "spades"][
-            Math.floor(Math.random() * 4)
-          ],
-          value: [
-            "2",
-            "3",
-            "4",
-            "5",
-            "6",
-            "7",
-            "8",
-            "9",
-            "10",
-            "J",
-            "Q",
-            "K",
-            "A",
-          ][Math.floor(Math.random() * 13)],
-          playedBy: aiPlayer,
+    const handleCardPlayed = (event: MessageEvent) => {
+      if (event.data && event.data.type === "game:card-played") {
+        console.log("[GameBoard] Received card played event:", event.data);
+        const { playerId, card } = event.data.payload;
+
+        // Find the player who played the card
+        const playerIndex = players.findIndex((p) => p === playerId);
+        const playerName = playerIndex >= 0 ? players[playerIndex] : playerId;
+
+        // Convert the card to the format expected by the UI
+        const uiCard = {
+          id:
+            typeof card.id === "string"
+              ? parseInt(card.id.split("-")[1])
+              : card.id,
+          suit: card.suit,
+          value: card.rank || card.value,
+          playedBy: playerName,
         };
 
-        setCenterCards((prev) => [...prev, randomCard]);
+        // Add the card to the center if it's not already there
+        setCenterCards((prev) => {
+          // Check if this card is already in the center
+          if (prev.some((c) => c.playedBy === playerName)) {
+            return prev;
+          }
+          return [...prev, uiCard];
+        });
+
+        // Update the current player index
+        setCurrentPlayerIndex((prev) => (prev + 1) % 4);
 
         // Record the move
         onRecordMove({
           type: "playCard",
-          player: aiPlayer,
-          card: randomCard,
+          player: playerName,
+          card: uiCard,
         });
-      }, 2000); // AI plays faster than the timer
 
-      return () => clearTimeout(timer);
-    }
-  }, [centerCards, gameStatus, players, onRecordMove]);
+        // Reset card play loading state
+        if (playerName === players[0]) {
+          setCardPlayLoading(false);
+          setPlayingCardId(null);
+        }
+      }
+    };
+
+    // Add event listener for card played events
+    window.addEventListener("message", handleCardPlayed);
+
+    return () => {
+      window.removeEventListener("message", handleCardPlayed);
+    };
+  }, [gameStatus, players, onRecordMove]);
 
   // Clear center cards after all players have played
   useEffect(() => {
@@ -213,31 +222,90 @@ export function GameBoard({
       return;
     }
 
-    // Simulate network delay
-    setTimeout(() => {
-      // Add card to center
-      const playedCard = {
-        ...card,
-        playedBy: players[0], // First player is always the user
-      };
+    // Convert the card to the proper format for the API
+    const apiCard = {
+      id: `${card.suit}-${card.value}`,
+      suit: card.suit,
+      rank: card.value,
+    };
 
-      setCenterCards((prev) => [...prev, playedCard]);
+    console.log("[GameBoard] Playing card:", apiCard);
 
-      // Record the move
-      onRecordMove({
-        type: "playCard",
-        player: players[0],
-        card: playedCard,
-      });
+    // If we have an onPlayCard callback, use it
+    if (onPlayCard) {
+      onPlayCard(apiCard);
+    }
 
-      // If we have an onPlayCard callback, use it
-      if (onPlayCard) {
-        onPlayCard(card);
+    // If we have a sendMessage function, use it to send the card to the server
+    if (sendMessage) {
+      try {
+        // Get the current player's ID from the game state
+        // This is more reliable than using players[0] which is just the name
+        const currentPlayerId = onPlayCard ? null : players[0]; // If we have onPlayCard, let it handle the player ID
+
+        if (!onPlayCard && !currentPlayerId) {
+          console.error("[GameBoard] Cannot play card, player ID not found");
+          setCardPlayLoading(false);
+          setPlayingCardId(null);
+          return;
+        }
+
+        // If we have onPlayCard, use it (it will handle getting the player ID)
+        // Otherwise, send the message directly with the player ID
+        if (!onPlayCard) {
+          console.log(
+            `[GameBoard] Sending play card message with player ID: ${currentPlayerId}`
+          );
+          sendMessage({
+            type: "game:play-card",
+            payload: {
+              roomId,
+              playerId: currentPlayerId,
+              card: apiCard,
+            },
+          });
+        }
+
+        // Note: We don't update the UI here - we'll wait for the server to send us a card-played event
+        // This ensures consistency between all clients
+
+        // If the server doesn't respond within 5 seconds, reset the loading state
+        setTimeout(() => {
+          if (cardPlayLoading) {
+            console.log(
+              "[GameBoard] Card play timeout - resetting loading state"
+            );
+            setCardPlayLoading(false);
+            setPlayingCardId(null);
+          }
+        }, 5000);
+      } catch (error) {
+        console.error("[GameBoard] Error sending play card message:", error);
+        setCardPlayLoading(false);
+        setPlayingCardId(null);
       }
+    } else {
+      // Fallback to local simulation if no sendMessage function
+      setTimeout(() => {
+        // Add card to center
+        const playedCard = {
+          ...card,
+          playedBy: players[0], // First player is always the user
+        };
 
-      setCardPlayLoading(false);
-      setPlayingCardId(null);
-    }, 800); // Simulate a slight delay for the animation
+        setCenterCards((prev) => [...prev, playedCard]);
+
+        // Record the move
+        onRecordMove({
+          type: "playCard",
+          player: players[0],
+          card: playedCard,
+        });
+
+        setCardPlayLoading(false);
+        setPlayingCardId(null);
+      }, 800); // Simulate a slight delay for the animation
+    }
   };
 
   const handleEmote = (emoji: string) => {
@@ -311,12 +379,13 @@ export function GameBoard({
       <div className="absolute top-6 right-6 bg-card p-2 rounded-lg border border-border/50">
         <p className="text-sm text-muted-foreground">Score:</p>
         <p className="font-medieval text-lg">
-          Team 1:{" "}
-          {(gameState?.scores[players[0]] || 0) +
-            (gameState?.scores[players[2]] || 0)}{" "}
-          | Team 2:{" "}
-          {(gameState?.scores[players[1]] || 0) +
-            (gameState?.scores[players[3]] || 0)}
+          <span className="text-blue-500">
+            Royals: {gameState?.scores?.royals || 0}
+          </span>{" "}
+          |{" "}
+          <span className="text-red-500">
+            Rebels: {gameState?.scores?.rebels || 0}
+          </span>
         </p>
       </div>
 
@@ -473,6 +542,8 @@ export function GameBoard({
         <div className="flex justify-center">
           {playerHand
             .filter((card) => !centerCards.some((c) => c.id === card.id))
+            // If initialCardsDeal is true, only show the first 5 cards
+            .slice(0, initialCardsDeal ? 5 : undefined)
             .map((card, index, filteredHand) => (
               <div
                 key={card.id}

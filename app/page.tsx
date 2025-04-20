@@ -23,12 +23,21 @@ export default function HomePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
         >
+          <div className="mb-4">
+            <Image
+              src="/assets/logo.png"
+              alt="Turup's Gambit Logo"
+              width={200}
+              height={200}
+              className="drop-shadow-[0_3px_5px_rgba(0,0,0,0.5)]"
+            />
+          </div>
           <h1 className="text-5xl md:text-7xl font-medieval text-primary drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
             Turup's Gambit
           </h1>
         </motion.div>
         <motion.p
-          className="text-xl md:text-2xl mb-8 font-medieval text-foreground/80"
+          className="text-xl md:text-2xl mb-12 font-medieval text-foreground/80"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.8, delay: 0.3 }}
@@ -38,32 +47,10 @@ export default function HomePage() {
         </motion.p>
 
         <motion.div
-          className="max-w-3xl mx-auto mb-12 text-lg"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8, delay: 0.5 }}
-        >
-          <p className="mb-4">
-            In the ancient halls of Camelot, where knights and nobles gather, a
-            game of wits and fortune unfolds. Turup's Gambit, known in whispered
-            legends as "Hokm," challenges the strategic minds of the realm.
-          </p>
-          <p className="mb-4">
-            Form alliances, predict your opponent's moves, and master the art of
-            the trump suit. Will you rise to become the champion of the royal
-            court, or fall to the cunning of your adversaries?
-          </p>
-          <p>
-            The cards await your command, brave challenger. Your destiny is in
-            your hands.
-          </p>
-        </motion.div>
-
-        <motion.div
           className="flex justify-center"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.8 }}
+          transition={{ duration: 0.8, delay: 0.5 }}
         >
           <Link href="/game" passHref>
             <Button className="medieval-button text-2xl py-8 px-12 bg-primary hover:bg-primary/90 text-primary-foreground group">
@@ -75,8 +62,16 @@ export default function HomePage() {
 
       <div className="absolute inset-0 -z-10">
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-60 dark:opacity-40"
-          style={{ backgroundImage: "url('/assets/fantasy-background.jpg')" }}
+          className="absolute inset-0 opacity-60 dark:opacity-40"
+          style={{
+            backgroundImage: "url('/assets/fantasy-background.png')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+          }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background" />
       </div>

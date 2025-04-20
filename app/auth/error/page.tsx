@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 
-export default function AuthErrorPage() {
+function AuthErrorContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
 
@@ -39,5 +39,33 @@ export default function AuthErrorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Fallback component to show while the main content is loading
+function AuthErrorFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-screen p-4">
+      <div className="w-full max-w-md space-y-4">
+        <Alert variant="destructive" className="bg-destructive/20">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Authentication Error</AlertTitle>
+          <AlertDescription>Loading error details...</AlertDescription>
+        </Alert>
+        <div className="flex justify-center">
+          <Button asChild variant="outline" className="medieval-button">
+            <Link href="/">Return Home</Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AuthErrorPage() {
+  return (
+    <Suspense fallback={<AuthErrorFallback />}>
+      <AuthErrorContent />
+    </Suspense>
   );
 }

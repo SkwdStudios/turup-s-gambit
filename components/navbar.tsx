@@ -1,55 +1,28 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, Info, LogIn, LogOut, Menu, X, Music } from "lucide-react";
+import { Info, Menu, X, Music, User } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { LoginModal } from "@/components/login-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { MusicControls } from "@/components/music-controls";
+import { AuthButton } from "@/components/auth-button";
 import Image from "next/image";
 import { motion } from "framer-motion";
 
 export function Navbar() {
-  const [showLoginModal, setShowLoginModal] = useState(false);
   const [showMusicControls, setShowMusicControls] = useState(false);
   const router = useRouter();
-  const pathname = usePathname();
-  const { user, isAuthenticated, logout } = useAuth();
-
-  // Remove debug logging
-  // useEffect(() => {
-  //   console.log("Auth status:", { isAuthenticated, user });
-  // }, [isAuthenticated, user]);
+  const { user } = useAuth();
 
   const handleNavigation = useCallback(
     (path: string) => {
-      if (!user && (path === "/profile" || path === "/game")) {
-        setShowLoginModal(true);
-        return;
-      }
       router.push(path);
     },
-    [user, router]
+    [router]
   );
-
-  const handleLogout = useCallback(() => {
-    logout();
-    if (pathname === "/profile" || pathname === "/game") {
-      router.push("/");
-    }
-  }, [logout, pathname, router]);
-
-  // Memoize user display info to prevent unnecessary recalculations
-  const userDisplayInfo = useMemo(() => {
-    return {
-      displayName: user?.discordUsername || user?.username || "User",
-      avatarUrl: user?.discordAvatar || user?.avatar || "/default-avatar.png",
-    };
-  }, [user]);
 
   return (
     <>
@@ -69,7 +42,7 @@ export function Navbar() {
             >
               <Link href="/" className="flex items-center gap-2">
                 <Image
-                  src="/logo.svg"
+                  src="/assets/logo.png"
                   alt="Turup's Gambit Logo"
                   width={48}
                   height={48}
@@ -121,59 +94,7 @@ export function Navbar() {
                 </Button>
               </motion.div>
 
-              {user ? (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                  className="flex items-center gap-4"
-                >
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="flex items-center gap-2"
-                    onClick={() => handleNavigation("/profile")}
-                  >
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage
-                        src={userDisplayInfo.avatarUrl}
-                        alt={userDisplayInfo.displayName}
-                      />
-                      <AvatarFallback className="bg-primary/20 text-primary">
-                        {userDisplayInfo.displayName.charAt(0).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="hidden lg:inline">
-                      {userDisplayInfo.displayName}
-                    </span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex items-center gap-2 medieval-button"
-                    onClick={handleLogout}
-                  >
-                    <LogOut size={18} />
-                    <span>Logout</span>
-                  </Button>
-                </motion.div>
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5 }}
-                >
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="flex items-center gap-2 medieval-button bg-primary text-primary-foreground"
-                    onClick={() => setShowLoginModal(true)}
-                  >
-                    <LogIn size={18} />
-                    <span>Login</span>
-                  </Button>
-                </motion.div>
-              )}
+              <AuthButton />
             </nav>
 
             {/* Mobile Navigation */}
@@ -213,35 +134,9 @@ export function Navbar() {
                     <span>Music</span>
                   </Button>
 
-                  {user ? (
-                    <>
-                      <Button
-                        variant="ghost"
-                        className="flex items-center justify-start gap-2"
-                        onClick={() => handleNavigation("/profile")}
-                      >
-                        <User size={18} />
-                        <span>Profile</span>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="flex items-center justify-start gap-2 medieval-button"
-                        onClick={handleLogout}
-                      >
-                        <LogOut size={18} />
-                        <span>Logout</span>
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant="default"
-                      className="flex items-center justify-start gap-2 medieval-button bg-primary text-primary-foreground"
-                      onClick={() => setShowLoginModal(true)}
-                    >
-                      <LogIn size={18} />
-                      <span>Login</span>
-                    </Button>
-                  )}
+                  <div className="mt-2">
+                    <AuthButton />
+                  </div>
                 </motion.div>
               </SheetContent>
             </Sheet>
@@ -270,12 +165,6 @@ export function Navbar() {
           <MusicControls />
         </motion.div>
       )}
-
-      {/* Login Modal */}
-      <LoginModal
-        isOpen={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
-      />
     </>
   );
 }

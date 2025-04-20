@@ -110,18 +110,37 @@
   }
 
   .medieval-button {
-    @apply relative inline-flex items-center justify-center px-6 py-3 overflow-hidden font-medieval font-bold rounded-md shadow-inner;
+    @apply relative inline-flex items-start justify-start overflow-hidden font-medieval font-bold rounded-md shadow-inner;
+    position: relative;
+  }
+
+  .medieval-button::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     background-image: url("/assets/button-texture.png");
-    background-size: cover;
+    background-size: contain;
+    opacity: 0.1; /* Very low opacity */
+    z-index: 0;
+    pointer-events: none;
   }
 
   .medieval-button:before {
     content: "";
     @apply absolute top-0 left-0 w-full h-full bg-gradient-to-br from-primary/20 to-secondary/20 opacity-70 transition duration-300 ease-out;
+    z-index: 1;
   }
 
   .medieval-button:hover:before {
     @apply opacity-100;
+  }
+
+  .medieval-button > * {
+    position: relative;
+    z-index: 2;
   }
 
   .medieval-input {
@@ -194,7 +213,10 @@
     width: 100vw;
     pointer-events: none;
     z-index: 101;
-    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%); /* Reduced opacity from 0.25 to 0.15 */
+    background: linear-gradient(
+      rgba(18, 16, 16, 0) 50%,
+      rgba(0, 0, 0, 0.15) 50%
+    ); /* Reduced opacity from 0.25 to 0.15 */
     background-size: 100% 4px;
     animation: crt-flicker 0.3s infinite; /* Slowed down from 0.15s to 0.3s */
   }
@@ -308,4 +330,3 @@
     animation: fadeUp 3s ease-in-out forwards;
   }
 }
-

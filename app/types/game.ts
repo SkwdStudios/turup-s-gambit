@@ -37,7 +37,31 @@ export interface GameState {
   currentBidder: string | null; // playerId
   trickCards: { [playerId: string]: Card };
   roundNumber: number;
-  gamePhase: "waiting" | "bidding" | "playing" | "finished";
+  gamePhase:
+    | "waiting"
+    | "initial_deal"
+    | "bidding"
+    | "final_deal"
+    | "playing"
+    | "finished";
+  leadSuit?: Suit | null; // The suit that was led in the current trick
+  teams: {
+    royals: string[]; // Array of player IDs for the Royals team (formerly team1)
+    rebels: string[]; // Array of player IDs for the Rebels team (formerly team2)
+  };
+  scores: {
+    royals: number; // Number of tricks won by the Royals team
+    rebels: number; // Number of tricks won by the Rebels team
+  };
+  consecutiveTricks: {
+    royals: number; // Number of consecutive tricks won by the Royals team
+    rebels: number; // Number of consecutive tricks won by the Rebels team
+  };
+  lastTrickWinner: string | null; // ID of the player who won the last trick
+  dealerIndex: number; // Index of the dealer in the players array
+  trumpCaller: string | null; // ID of the player who called trump
+  trumpVotes?: { [playerId: string]: Suit }; // Track votes for trump suit
+  playersVoted?: string[]; // Track which players have voted
 }
 
 export interface GameRoom {
@@ -46,6 +70,7 @@ export interface GameRoom {
   gameState: GameState;
   createdAt: number;
   lastActivity: number;
+  deck?: Card[]; // Store the deck for dealing remaining cards
 }
 
 export interface ServerToClientEvents {
