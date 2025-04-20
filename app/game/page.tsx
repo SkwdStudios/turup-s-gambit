@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GameModeSelector } from "@/components/game-mode-selector";
 import { VisualEffects } from "@/components/visual-effects";
 import { LoginModal } from "@/components/login-modal";
-import { useAuth } from "@/hooks/use-auth";
+import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
 
 export default function GamePage() {
   const [roomId, setRoomId] = useState("");
@@ -26,7 +26,7 @@ export default function GamePage() {
   const [isJoiningGame, setIsJoiningGame] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const router = useRouter();
-  const { user } = useAuth();
+  const { user } = useSupabaseAuth();
 
   // Check if user is logged in
   useEffect(() => {

@@ -11,7 +11,7 @@ import {
 import { useSupabaseRealtime } from "./use-supabase-realtime";
 import type { BroadcastMessage } from "./use-supabase-realtime";
 import { GameRoom, Player, GameState } from "@/app/types/game";
-import { useAuth } from "./use-auth";
+import { useSupabaseAuth } from "./use-supabase-auth";
 
 interface GameStateContextType {
   currentRoom: GameRoom | null;
@@ -38,7 +38,7 @@ export function RealtimeGameStateProvider({
   children: ReactNode;
   roomId: string;
 }) {
-  const { user } = useAuth();
+  const { user } = useSupabaseAuth();
   const { isConnected, sendMessage, messages, setMessages } =
     useSupabaseRealtime(roomId);
   const [currentRoom, setCurrentRoom] = useState<GameRoom | null>(null);

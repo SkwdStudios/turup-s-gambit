@@ -1,11 +1,16 @@
 // Helper functions for bot voting
+import {
+  isBotVotingInProgressState,
+  setBotVotingState,
+  isUIReadyState,
+  executeWhenUIReady,
+} from "@/lib/game-flow-manager";
 
 // Global tracking of bot votes to prevent duplicates
 // This persists across component re-renders
 let globalBotVotes: Record<string, boolean> = {};
-let isVotingInProgress = false;
 let lastVotingTimestamp = 0;
-const VOTING_COOLDOWN = 2000; // 2 seconds cooldown between voting attempts
+const VOTING_COOLDOWN = 3000; // 3 seconds cooldown between voting attempts
 
 /**
  * Reset the global bot votes tracking
@@ -13,7 +18,7 @@ const VOTING_COOLDOWN = 2000; // 2 seconds cooldown between voting attempts
  */
 export function resetBotVotesTracking() {
   globalBotVotes = {};
-  isVotingInProgress = false;
+  setBotVotingState(false);
   lastVotingTimestamp = 0;
   console.log("[Bot Voting] Reset global bot votes tracking");
 }
@@ -307,8 +312,29 @@ export function triggerBotVoting(
   ) => void,
   votingComplete: boolean
 ) {
+  // Check if the UI is ready
+  if (!isUIReadyState()) {
+    console.log(
+      `[Bot Voting] UI is not ready yet, scheduling bot voting for later`
+    );
+
+    // Schedule bot voting for when UI is ready
+    executeWhenUIReady(() => {
+      triggerBotVoting(
+        currentRoom,
+        roomId,
+        sendMessage,
+        botVotes,
+        setBotVotes,
+        votingComplete
+      );
+    }, 5000);
+
+    return;
+  }
+
   // Check if voting is already in progress
-  if (isVotingInProgress) {
+  if (isBotVotingInProgressState()) {
     console.log(
       `[Bot Voting] Voting is already in progress, skipping duplicate trigger`
     );
@@ -382,8 +408,8 @@ export function triggerBotVoting(
     botsToVote.map((b: any) => `${b.name} (${b.id})`).join(", ")
   );
 
-  // Mark voting as in progress
-  isVotingInProgress = true;
+  // Mark voting as in progress using the global state manager
+  setBotVotingState(true);
 
   // Make bots vote - pass currentRoom to check for already voted players
   makeBotVote(
@@ -397,7 +423,7 @@ export function triggerBotVoting(
 
   // Reset the voting in progress flag after a timeout
   setTimeout(() => {
-    isVotingInProgress = false;
+    setBotVotingState(false);
     console.log(
       `[Bot Voting] Voting process completed, reset in-progress flag`
     );

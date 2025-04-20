@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogIn, LogOut, User, Settings } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
+import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
 import { LoginModal } from "@/components/login-modal";
 import {
   DropdownMenu,
@@ -21,7 +21,11 @@ export function AuthButton() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout } = useSupabaseAuth();
+
+  // Debug logging
+  console.log("[AuthButton] User:", user);
+  console.log("[AuthButton] isAuthenticated:", isAuthenticated);
 
   const handleNavigation = useCallback(
     (path: string) => {
@@ -43,8 +47,13 @@ export function AuthButton() {
 
   // User display info
   const userDisplayInfo = {
-    displayName: user?.discordUsername || user?.username || user?.name || "User",
-    avatarUrl: user?.discordAvatar || user?.avatar || user?.image || "/default-avatar.png",
+    displayName:
+      user?.discordUsername || user?.username || user?.name || "User",
+    avatarUrl:
+      user?.discordAvatar ||
+      user?.avatar ||
+      user?.image ||
+      "/default-avatar.png",
   };
 
   if (isAuthenticated && user) {
@@ -77,17 +86,22 @@ export function AuthButton() {
                 </span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 bg-card/95 backdrop-blur-md border-primary/20">
-              <DropdownMenuLabel className="font-medieval text-primary">My Account</DropdownMenuLabel>
+            <DropdownMenuContent
+              align="end"
+              className="w-56 bg-card/95 backdrop-blur-md border-primary/20"
+            >
+              <DropdownMenuLabel className="font-medieval text-primary">
+                My Account
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="cursor-pointer flex items-center gap-2"
                 onClick={() => handleNavigation("/profile")}
               >
                 <User size={16} />
                 <span>Profile</span>
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="cursor-pointer flex items-center gap-2"
                 onClick={() => handleNavigation("/game")}
               >
@@ -95,7 +109,7 @@ export function AuthButton() {
                 <span>Game Settings</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="cursor-pointer flex items-center gap-2 text-destructive"
                 onClick={handleLogout}
               >
@@ -105,7 +119,7 @@ export function AuthButton() {
             </DropdownMenuContent>
           </DropdownMenu>
         </motion.div>
-        
+
         {/* Login Modal */}
         <LoginModal
           isOpen={showLoginModal}

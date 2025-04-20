@@ -17,10 +17,10 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { VisualEffects } from "@/components/visual-effects";
-import { useAuth } from "@/hooks/use-auth";
+import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
 
 export default function ProfilePage() {
-  const { user: authUser } = useAuth();
+  const { user: authUser } = useSupabaseAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     username: authUser?.username || authUser?.name || "",

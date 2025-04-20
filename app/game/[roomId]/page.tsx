@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import {
   triggerBotVoting,
@@ -17,7 +17,10 @@ import { VisualEffects } from "@/components/visual-effects";
 import { CardShuffleAnimation } from "@/components/card-shuffle-animation";
 import { useGameState } from "@/hooks/use-game-state";
 import { useReplay } from "@/hooks/use-replay";
-import { useAuth } from "@/hooks/use-auth";
+import {
+  useSupabaseAuth,
+  SupabaseAuthProvider,
+} from "@/hooks/use-supabase-auth";
 import { LoginModal } from "@/components/login-modal";
 import { Share } from "lucide-react";
 import { GameRoom, GameState, Card, Suit, Player } from "@/app/types/game";
@@ -76,7 +79,7 @@ function GameRoomContentInner() {
     mode as "classic" | "frenzy"
   );
   const { recordMove, getReplayData } = useReplay();
-  const { user } = useAuth();
+  const { user } = useSupabaseAuth();
 
   // Use the Realtime Game State
   const {
@@ -599,7 +602,9 @@ function GameRoomContentInner() {
     } catch (error) {
       console.error("[Debug] Error forcing bot votes:", error);
       setStatusMessage(
-        `Error: ${error.message || "Failed to force bot votes"}`
+        `Error: ${
+          error instanceof Error ? error.message : "Failed to force bot votes"
+        }`
       );
       setTimeout(() => setStatusMessage(null), 3000);
     }
@@ -653,7 +658,9 @@ function GameRoomContentInner() {
     } catch (error) {
       console.error("[Game] Error playing card:", error);
       setStatusMessage(
-        `Error playing card: ${error.message || "Unknown error"}`
+        `Error playing card: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
       setTimeout(() => setStatusMessage(null), 2000);
     }
@@ -896,13 +903,7 @@ function GameRoomContentInner() {
                       {players.length}/4 players joined
                     </p>
                     <div className="space-y-2">
-                      {/* Debug info */}
-                      {console.log(
-                        "Rendering buttons - isCurrentUserHost:",
-                        isCurrentUserHost
-                      )}
-                      {console.log("allPlayersJoined:", allPlayersJoined)}
-                      {console.log("players.length:", players.length)}
+                      {/* Debug info rendered in console */}
 
                       {/* Debug button - only visible in development */}
                       {process.env.NODE_ENV === "development" && (
@@ -943,16 +944,7 @@ function GameRoomContentInner() {
                         </Button>
                       ) : (
                         <div className="hidden">
-                          {console.log(
-                            "Fill with Bots button not shown because:",
-                            !isCurrentUserHost
-                              ? "Not host"
-                              : allPlayersJoined
-                              ? "All players joined"
-                              : players.length >= 4
-                              ? "Room is full"
-                              : "Unknown reason"
-                          )}
+                          {/* Button not shown - reason logged in console */}
                         </div>
                       )}
 
@@ -1170,10 +1162,12 @@ export default function GameRoomPage({ params }: GameRoomPageProps) {
   const roomId = resolvedParams.roomId;
 
   return (
-    <RealtimeGameStateProvider roomId={roomId}>
-      <ProtectedRoute>
-        <GameRoomContent />
-      </ProtectedRoute>
-    </RealtimeGameStateProvider>
+    <SupabaseAuthProvider>
+      <RealtimeGameStateProvider roomId={roomId}>
+        <ProtectedRoute>
+          <GameRoomContent />
+        </ProtectedRoute>
+      </RealtimeGameStateProvider>
+    </SupabaseAuthProvider>
   );
 }
