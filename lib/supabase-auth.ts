@@ -1,26 +1,8 @@
-import { createBrowserClient } from "@supabase/ssr";
 import { type Provider } from "@supabase/supabase-js";
+import { supabase } from "./supabase";
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-  throw new Error("Missing env.NEXT_PUBLIC_SUPABASE_URL");
-}
-
-if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-  throw new Error("Missing env.NEXT_PUBLIC_SUPABASE_ANON_KEY");
-}
-
-// Create the Supabase client with default settings
-export const supabaseAuth = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  }
-);
+// Use the same Supabase instance for authentication
+export const supabaseAuth = supabase;
 
 export type OAuthProvider = "discord" | "google";
 

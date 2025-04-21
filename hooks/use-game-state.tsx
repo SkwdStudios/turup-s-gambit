@@ -1,22 +1,31 @@
-"use client"
+"use client";
 
-import { useState } from "react"
+import { useGameStore } from "@/stores/gameStore";
+import { GameState } from "@/app/types/game";
 
-export interface GameState {
-  trumpSuit: string
-  currentTrick: any[]
-  scores: Record<string, number>
-  currentPlayer: string
-  gameMode: "classic" | "frenzy"
-  specialPowers?: Record<string, boolean>
-}
-
+/**
+ * useGameState - A hook that provides game state functionality
+ * This is now a wrapper around the Zustand gameStore for backward compatibility
+ */
 export function useGameState(mode: "classic" | "frenzy") {
-  const [gameState, setGameState] = useState<GameState>({
-    trumpSuit: "hearts",
-    currentTrick: [],
-    scores: {},
-    currentPlayer: "",
+  const {
+    trumpSuit,
+    currentTrick,
+    scores,
+    currentPlayer,
+    updateGameState,
+    setGameMode,
+  } = useGameStore();
+
+  // Set the game mode
+  setGameMode(mode);
+
+  // Construct a gameState object from the store values
+  const gameState: GameState = {
+    trumpSuit,
+    currentTrick,
+    scores,
+    currentPlayer,
     gameMode: mode,
     specialPowers:
       mode === "frenzy"
@@ -25,18 +34,10 @@ export function useGameState(mode: "classic" | "frenzy") {
             swapCard: true,
           }
         : undefined,
-  })
-
-  const updateGameState = (newState: Partial<GameState>) => {
-    setGameState((prev) => ({
-      ...prev,
-      ...newState,
-    }))
-  }
+  };
 
   return {
     gameState,
     updateGameState,
-  }
+  };
 }
-

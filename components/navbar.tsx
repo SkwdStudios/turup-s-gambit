@@ -6,7 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Info, Menu, X, Music, User } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
+import { useAuthStore } from "@/stores/authStore";
 import { MusicControls } from "@/components/music-controls";
 import { AuthButton } from "@/components/auth-button";
 import Image from "next/image";
@@ -15,7 +15,7 @@ import { motion } from "framer-motion";
 export function Navbar() {
   const [showMusicControls, setShowMusicControls] = useState(false);
   const router = useRouter();
-  const { user } = useSupabaseAuth();
+  const { user } = useAuthStore();
 
   const handleNavigation = useCallback(
     (path: string) => {

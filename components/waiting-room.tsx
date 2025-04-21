@@ -37,8 +37,13 @@ export function WaitingRoom({
 
   // Helper to find player details safely
   const getPlayerDetails = (playerName: string) => {
-    return currentRoom?.players.find((p) => p.name === playerName);
+    if (!currentRoom || !currentRoom.players) return null;
+    return currentRoom.players.find((p) => p.name === playerName);
   };
+
+  // Safe access to players array
+  const safePlayersArray = Array.isArray(players) ? players : [];
+  const playerCount = safePlayersArray.length;
 
   return (
     <motion.div
@@ -80,7 +85,7 @@ export function WaitingRoom({
       </motion.div>
       <div className="grid grid-cols-4 gap-4">
         {[0, 1, 2, 3].map((index) => {
-          const playerName = players[index];
+          const playerName = safePlayersArray[index];
           const playerDetails = playerName
             ? getPlayerDetails(playerName)
             : null;
@@ -141,7 +146,7 @@ export function WaitingRoom({
         className="mt-4 flex flex-col gap-2"
       >
         <p className="text-sm text-muted-foreground">
-          {players.length}/4 players joined
+          {playerCount}/4 players joined
         </p>
         <div className="space-y-2">
           {/* Debug button - only visible in development */}
@@ -155,7 +160,7 @@ export function WaitingRoom({
           )}
 
           {/* Fill with Bots button */}
-          {isCurrentUserHost && !allPlayersJoined && players.length < 4 && (
+          {isCurrentUserHost && !allPlayersJoined && playerCount < 4 && (
             <Button
               className="w-full medieval-button bg-secondary hover:bg-secondary/90 text-secondary-foreground flex items-center justify-center gap-2"
               onClick={onAddBots}

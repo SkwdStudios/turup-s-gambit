@@ -9,21 +9,23 @@ import {
   SkipForward,
   SkipBack,
 } from "lucide-react";
-import { useMusicPlayer } from "@/hooks/use-music-player";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 export function MusicControls() {
   const {
     isPlaying,
     volume,
     isMuted,
-    currentTrack,
+    tracks,
+    currentTrackIndex,
     togglePlay,
     toggleMute,
     setVolume,
     nextTrack,
     previousTrack,
-  } = useMusicPlayer();
+  } = useSettingsStore();
 
+  const currentTrack = tracks[currentTrackIndex];
   const handleVolumeChange = (value: number[]) => {
     setVolume(value[0]);
   };

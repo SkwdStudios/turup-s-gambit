@@ -6,9 +6,8 @@ import { Inter, MedievalSharp } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Navbar } from "@/components/navbar";
-import { SupabaseAuthProvider } from "@/hooks/use-supabase-auth";
-import { MusicPlayerProvider } from "@/hooks/use-music-player";
 import Link from "next/link";
+// Zustand stores are used for state management, no need for context providers
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const medievalSharp = MedievalSharp({
@@ -38,43 +37,35 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <SupabaseAuthProvider>
-            <MusicPlayerProvider>
-              <div className="flex flex-col min-h-screen w-full">
-                <Navbar />
-                <main className="flex-1 w-full mx-auto pt-24 pb-8">
-                  {children}
-                </main>
-                <footer className="py-6 text-center text-sm text-foreground/60 border-t border-primary/10 mt-auto">
-                  <div className="container mx-auto px-4">
-                    <p className="mb-4">
-                      © {2025} Turup's Gambit Fantasy Edition
-                    </p>
-                    <div className="flex justify-center gap-6">
-                      <Link
-                        href="/privacy-policy"
-                        className="hover:text-primary transition-colors"
-                      >
-                        Privacy Policy
-                      </Link>
-                      <Link
-                        href="/about"
-                        className="hover:text-primary transition-colors"
-                      >
-                        About
-                      </Link>
-                      <Link
-                        href="/game"
-                        className="hover:text-primary transition-colors"
-                      >
-                        Play Game
-                      </Link>
-                    </div>
-                  </div>
-                </footer>
+          <div className="flex flex-col min-h-screen w-full">
+            <Navbar />
+            <main className="flex-1 w-full mx-auto pt-24 pb-8">{children}</main>
+            <footer className="py-6 text-center text-sm text-foreground/60 border-t border-primary/10 mt-auto">
+              <div className="container mx-auto px-4">
+                <p className="mb-4">© {2025} Turup's Gambit Fantasy Edition</p>
+                <div className="flex justify-center gap-6">
+                  <Link
+                    href="/privacy-policy"
+                    className="hover:text-primary transition-colors"
+                  >
+                    Privacy Policy
+                  </Link>
+                  <Link
+                    href="/about"
+                    className="hover:text-primary transition-colors"
+                  >
+                    About
+                  </Link>
+                  <Link
+                    href="/game"
+                    className="hover:text-primary transition-colors"
+                  >
+                    Play Game
+                  </Link>
+                </div>
               </div>
-            </MusicPlayerProvider>
-          </SupabaseAuthProvider>
+            </footer>
+          </div>
         </ThemeProvider>
       </body>
     </html>

@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
+import { useAuthStore } from "@/stores/authStore";
 import {
   signInWithEmail,
   signUpWithEmail,
@@ -68,7 +68,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const { user, loginAnonymously } = useSupabaseAuth();
+  const { user, loginAnonymously } = useAuthStore();
 
   const loginForm = useForm<z.infer<typeof loginSchema>>({
     resolver: zodResolver(loginSchema),

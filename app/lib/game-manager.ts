@@ -87,8 +87,19 @@ export class GameManager {
     }
 
     // Check if player already exists in the room
-    const existingPlayer = room.players.find((p) => p.name === playerName);
+    const existingPlayer = room.players.find((p) => {
+      // For bots, check by ID since bot names might be reused
+      if (isBot && playerId) {
+        return p.id === playerId;
+      }
+      // For human players, check by name
+      return p.name === playerName;
+    });
+
     if (existingPlayer) {
+      console.log(
+        `Player ${playerName} (${playerId}) already exists in room ${roomId}`
+      );
       return existingPlayer;
     }
 
@@ -206,16 +217,50 @@ export class GameManager {
   }
 
   public startGame(roomId: string): void {
-    const room = this.rooms.get(roomId);
-    if (!room) return;
+    console.log(`[GameManager] Starting game in room ${roomId}`);
 
-    if (room.players.length !== 4) {
-      throw new Error("Game can only start with 4 players");
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      console.error(
+        `[GameManager] Cannot start game: Room ${roomId} not found`
+      );
+      throw new Error(`Room ${roomId} not found`);
+    }
+
+    console.log(`[GameManager] Room has ${room.players.length} players`);
+
+    // Allow starting with fewer than 4 players in development
+    if (room.players.length < 2) {
+      console.error(
+        `[GameManager] Cannot start game: Not enough players (${room.players.length})`
+      );
+      throw new Error(
+        `Game needs at least 2 players, but only has ${room.players.length}`
+      );
     }
 
     // Set up teams - partners sit opposite each other (0,2 and 1,3)
-    const royals = [room.players[0].id, room.players[2].id]; // The Royals team
-    const rebels = [room.players[1].id, room.players[3].id]; // The Rebels team
+    let royals: string[] = [];
+    let rebels: string[] = [];
+
+    // Handle different player counts
+    if (room.players.length === 4) {
+      // Full game: partners sit opposite each other (0,2 and 1,3)
+      royals = [room.players[0].id, room.players[2].id]; // The Royals team
+      rebels = [room.players[1].id, room.players[3].id]; // The Rebels team
+    } else if (room.players.length === 3) {
+      // 3 players: 2 vs 1
+      royals = [room.players[0].id, room.players[2].id]; // The Royals team
+      rebels = [room.players[1].id]; // The Rebels team
+    } else if (room.players.length === 2) {
+      // 2 players: 1 vs 1
+      royals = [room.players[0].id]; // The Royals team
+      rebels = [room.players[1].id]; // The Rebels team
+    }
+
+    console.log(
+      `[GameManager] Teams set up - Royals: ${royals.length} players, Rebels: ${rebels.length} players`
+    );
 
     // Generate and shuffle the deck
     const deck = this.generateDeck();

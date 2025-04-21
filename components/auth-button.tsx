@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogIn, LogOut, User, Settings } from "lucide-react";
-import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
+import { useAuthStore } from "@/stores/authStore";
 import { LoginModal } from "@/components/login-modal";
 import {
   DropdownMenu,
@@ -21,7 +21,7 @@ export function AuthButton() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-  const { user, isAuthenticated, logout } = useSupabaseAuth();
+  const { user, isAuthenticated, logout } = useAuthStore();
 
   // Debug logging
   console.log("[AuthButton] User:", user);

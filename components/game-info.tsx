@@ -1,13 +1,13 @@
 "use client";
 
-import { useSupabaseAuth } from "@/hooks/use-supabase-auth";
+import { useAuthStore } from "@/stores/authStore";
 
 interface GameInfoProps {
   roomId: string;
 }
 
 export function GameInfo({ roomId }: GameInfoProps) {
-  const { user } = useSupabaseAuth();
+  const { user } = useAuthStore();
 
   return (
     <div className="bg-card/80 backdrop-blur-sm p-4 rounded-lg border border-primary/30">

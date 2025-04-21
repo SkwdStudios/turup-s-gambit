@@ -163,10 +163,45 @@ async function getPendingMessagesForRoom(roomId: string) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { type, payload } = body;
+    const {
+      type,
+      payload,
+      roomId: topLevelRoomId,
+      playerName: topLevelPlayerName,
+    } = body;
+
+    // Extract roomId and playerName from multiple possible locations in the request
+    const roomId =
+      (payload && typeof payload === "object" && payload.roomId) ||
+      topLevelRoomId ||
+      (typeof body === "object" && "roomId" in body ? body.roomId : null);
+
+    const playerName =
+      (payload && typeof payload === "object" && payload.playerName) ||
+      topLevelPlayerName ||
+      (typeof body === "object" && "playerName" in body
+        ? body.playerName
+        : null);
+
+    // Log the received data
+    console.log(`[Realtime API] Received ${type} request:`, {
+      payload,
+      extractedRoomId: roomId,
+      extractedPlayerName: playerName,
+    });
+
+    if (!roomId) {
+      return NextResponse.json(
+        {
+          error:
+            "Missing roomId. Please ensure roomId is included in the request.",
+        },
+        { status: 400 }
+      );
+    }
 
     // Generate a unique ID for this request
-    const requestId = JSON.stringify({ type, payload });
+    const requestId = JSON.stringify({ type, payload, roomId });
 
     // Check if we've recently processed this exact request
     const now = Date.now();
@@ -180,17 +215,9 @@ export async function POST(req: Request) {
     // Mark this request as processed
     processedRequests.set(requestId, now);
 
-    console.log(`[Realtime API] Received ${type} request:`, payload);
-
     switch (type) {
       case "room:create": {
-        const { roomId, playerName, isBot } = payload;
-        if (!roomId) {
-          return NextResponse.json(
-            { error: "Missing roomId" },
-            { status: 400 }
-          );
-        }
+        const isBot = payload?.isBot || false;
 
         // Check if the room already exists
         const existingRoom = gameManager.getRoom(roomId);
@@ -212,6 +239,21 @@ export async function POST(req: Request) {
             trickCards: {},
             roundNumber: 0,
             gamePhase: "waiting",
+            teams: {
+              royals: [],
+              rebels: [],
+            },
+            scores: {
+              royals: 0,
+              rebels: 0,
+            },
+            consecutiveTricks: {
+              royals: 0,
+              rebels: 0,
+            },
+            lastTrickWinner: null,
+            dealerIndex: 0,
+            trumpCaller: null,
           },
           createdAt: Date.now(),
           lastActivity: Date.now(),
@@ -222,12 +264,7 @@ export async function POST(req: Request) {
 
         // If a player name was provided, add them to the room
         if (playerName) {
-          gameManager.addPlayerToRoom(
-            roomId,
-            playerName,
-            undefined,
-            isBot || false
-          );
+          gameManager.addPlayerToRoom(roomId, playerName, undefined, isBot);
           console.log(
             `[Realtime API] Added player ${playerName} to new room ${roomId}`
           );
@@ -237,16 +274,24 @@ export async function POST(req: Request) {
       }
 
       case "player:joined": {
-        const { playerName, isBot } = payload;
-        const roomId =
-          payload.roomId ||
-          (typeof payload === "object" && "roomId" in payload
-            ? payload.roomId
-            : null);
+        const isBot = payload?.isBot || false;
+        const botId = isBot ? payload?.id : null;
 
-        if (!roomId || !playerName) {
+        // For bot players, use the bot's name directly from the payload
+        const effectivePlayerName = isBot ? payload?.name : playerName;
+
+        console.log(
+          `[Realtime API] Processing ${
+            isBot ? "bot" : "player"
+          } join: ${effectivePlayerName} ${botId ? `(ID: ${botId})` : ""}`
+        );
+
+        if (!effectivePlayerName) {
           return NextResponse.json(
-            { error: "Missing roomId or playerName" },
+            {
+              error:
+                "Missing player name. Please ensure name is included for bots or playerName for human players.",
+            },
             { status: 400 }
           );
         }
@@ -255,7 +300,7 @@ export async function POST(req: Request) {
         let roomState: GameRoom;
         const existingGameRoom = gameManager.getRoom(roomId);
         const existingPlayer = existingGameRoom?.players.find(
-          (p) => p.name === playerName
+          (p) => p.name === effectivePlayerName
         );
 
         if (!existingPlayer) {
@@ -273,6 +318,21 @@ export async function POST(req: Request) {
                 trickCards: {},
                 roundNumber: 0,
                 gamePhase: "waiting",
+                teams: {
+                  royals: [],
+                  rebels: [],
+                },
+                scores: {
+                  royals: 0,
+                  rebels: 0,
+                },
+                consecutiveTricks: {
+                  royals: 0,
+                  rebels: 0,
+                },
+                lastTrickWinner: null,
+                dealerIndex: 0,
+                trumpCaller: null,
               },
               createdAt: Date.now(),
               lastActivity: Date.now(),
@@ -281,11 +341,16 @@ export async function POST(req: Request) {
             roomState = newRoom;
             console.log(`[Realtime API] Created new room with ID ${roomId}`);
           } else {
-            gameManager.addPlayerToRoom(roomId, playerName, undefined, isBot);
+            gameManager.addPlayerToRoom(
+              roomId,
+              effectivePlayerName,
+              payload?.id,
+              isBot
+            );
             roomState = gameManager.getRoom(roomId)!;
           }
           console.log(
-            `[Realtime API] Player ${playerName} added to GameManager for room ${roomId}`
+            `[Realtime API] Player ${effectivePlayerName} added to GameManager for room ${roomId}`
           );
         } else {
           if (!existingGameRoom) {
@@ -293,7 +358,7 @@ export async function POST(req: Request) {
           }
           roomState = existingGameRoom;
           console.log(
-            `[Realtime API] Player ${playerName} already exists in GameManager for room ${roomId}`
+            `[Realtime API] Player ${effectivePlayerName} already exists in GameManager for room ${roomId}`
           );
         }
 
@@ -313,17 +378,22 @@ export async function POST(req: Request) {
         // Always send a player:joined message to ensure all clients are in sync
         // This ensures all players see each other
         console.log(
-          `[Realtime API] Broadcasting player:joined for ${playerName}`
+          `[Realtime API] Broadcasting player:joined for ${effectivePlayerName}`
         );
 
         // Find the player object with complete information
-        const playerInfo = roomState.players.find((p) => p.name === playerName);
+        const playerInfo = roomState.players.find(
+          (p) => p.name === effectivePlayerName
+        );
 
         await broadcastToRoom(roomId, {
           type: "player:joined",
           payload: {
-            name: playerName,
-            id: playerInfo?.id || Math.random().toString(36).substring(2, 9),
+            name: effectivePlayerName,
+            id:
+              playerInfo?.id ||
+              payload?.id ||
+              Math.random().toString(36).substring(2, 9),
             isHost: playerInfo?.isHost || false,
             isBot: playerInfo?.isBot || isBot || false,
             roomId: roomId,
@@ -395,6 +465,21 @@ export async function POST(req: Request) {
                 trickCards: {},
                 roundNumber: 0,
                 gamePhase: "waiting",
+                teams: {
+                  royals: [],
+                  rebels: [],
+                },
+                scores: {
+                  royals: 0,
+                  rebels: 0,
+                },
+                consecutiveTricks: {
+                  royals: 0,
+                  rebels: 0,
+                },
+                lastTrickWinner: null,
+                dealerIndex: 0,
+                trumpCaller: null,
               },
               createdAt: Date.now(),
               lastActivity: Date.now(),
@@ -543,8 +628,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true });
       }
 
+      case "game:start":
       case "game:ready": {
-        const { roomId } = payload;
+        const { roomId, gameMode } = payload;
         if (!roomId) {
           return NextResponse.json(
             { error: "Missing roomId" },
@@ -560,15 +646,33 @@ export async function POST(req: Request) {
           );
         }
 
+        console.log(
+          `[Realtime API] Starting game in room ${roomId} with mode ${
+            gameMode || "classic"
+          }`
+        );
+
         // Start the game
         gameManager.startGame(roomId);
         const updatedRoom = gameManager.getRoom(roomId);
 
         if (updatedRoom) {
+          // Update game mode if provided
+          if (gameMode && updatedRoom.gameState) {
+            updatedRoom.gameState.gameMode = gameMode;
+          }
+
+          console.log(
+            `[Realtime API] Broadcasting game:started for room ${roomId}`
+          );
+
+          // Send game:started message with the full room data
           await broadcastToRoom(roomId, {
             type: "game:started",
             payload: updatedRoom,
           });
+
+          // Send game:state-updated message with just the game state
           await broadcastToRoom(roomId, {
             type: "game:state-updated",
             payload: updatedRoom.gameState,
@@ -638,12 +742,11 @@ export async function POST(req: Request) {
           });
 
           return NextResponse.json({ success: true });
-        } catch (error) {
+        } catch (error: unknown) {
           console.error("[API] Error handling play card:", error);
-          return NextResponse.json(
-            { error: error.message || "Failed to play card" },
-            { status: 500 }
-          );
+          const errorMessage =
+            error instanceof Error ? error.message : "Failed to play card";
+          return NextResponse.json({ error: errorMessage }, { status: 500 });
         }
       }
 
@@ -798,6 +901,46 @@ export async function POST(req: Request) {
         }
       }
 
+      case "game:playing-started": {
+        const { roomId, gamePhase } = payload;
+        if (!roomId) {
+          return NextResponse.json(
+            { error: "Missing roomId" },
+            { status: 400 }
+          );
+        }
+
+        const room = gameManager.getRoom(roomId);
+        if (!room) {
+          return NextResponse.json(
+            { error: "Room not found" },
+            { status: 404 }
+          );
+        }
+
+        // Update the game phase to playing if it's not already
+        if (room.gameState.gamePhase !== "playing") {
+          gameManager.startPlayingPhase(roomId);
+        }
+
+        // Broadcast the playing started message
+        await broadcastToRoom(roomId, {
+          type: "game:playing-started",
+          payload: { roomId, gamePhase: "playing" },
+        });
+
+        // Also broadcast the updated game state
+        const updatedRoom = gameManager.getRoom(roomId);
+        if (updatedRoom) {
+          await broadcastToRoom(roomId, {
+            type: "game:state-updated",
+            payload: updatedRoom.gameState,
+          });
+        }
+
+        return NextResponse.json({ success: true });
+      }
+
       case "game:play-card": {
         const { roomId, playerId, card } = payload;
         if (!roomId || !playerId || !card) {
@@ -841,21 +984,20 @@ export async function POST(req: Request) {
                   roomId,
                   scores: updatedRoom.gameState.scores,
                   winner:
-                    updatedRoom.gameState.scores.team1 >
-                    updatedRoom.gameState.scores.team2
-                      ? "team1"
-                      : "team2",
+                    updatedRoom.gameState.scores.royals >
+                    updatedRoom.gameState.scores.rebels
+                      ? "royals"
+                      : "rebels",
                 },
               });
             }
           }
 
           return NextResponse.json({ success: true });
-        } catch (error: any) {
-          return NextResponse.json(
-            { error: error.message || "Error playing card" },
-            { status: 400 }
-          );
+        } catch (error: unknown) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Error playing card";
+          return NextResponse.json({ error: errorMessage }, { status: 400 });
         }
       }
 
@@ -886,6 +1028,21 @@ export async function POST(req: Request) {
               trickCards: {},
               roundNumber: 0,
               gamePhase: "waiting",
+              teams: {
+                royals: [],
+                rebels: [],
+              },
+              scores: {
+                royals: 0,
+                rebels: 0,
+              },
+              consecutiveTricks: {
+                royals: 0,
+                rebels: 0,
+              },
+              lastTrickWinner: null,
+              dealerIndex: 0,
+              trumpCaller: null,
             },
             createdAt: Date.now(),
             lastActivity: Date.now(),
@@ -912,10 +1069,11 @@ export async function POST(req: Request) {
           { status: 400 }
         );
     }
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("[Realtime API] Error handling request:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: `Internal server error: ${errorMessage}` },
       { status: 500 }
     );
   }

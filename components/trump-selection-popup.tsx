@@ -27,6 +27,11 @@ export function TrumpSelectionPopup({
   onForceBotVotes,
   isCurrentUserHost = false,
 }: TrumpSelectionPopupProps) {
+  // Debug log to help diagnose issues with player hand
+  console.log("[TrumpSelectionPopup] Player hand:", playerHand);
+
+  // Show loading indicator if player hand is empty
+  const isHandLoading = playerHand.length === 0;
   const [selectedSuit, setSelectedSuit] = useState<string | null>(null);
   const [handAnalysis, setHandAnalysis] = useState<Record<string, number>>({
     hearts: 0,
@@ -55,6 +60,21 @@ export function TrumpSelectionPopup({
     }
   }, [playerHand]);
 
+  // Add a timeout to automatically close the popup if it gets stuck in voting complete state
+  useEffect(() => {
+    if (votingComplete) {
+      const timeoutId = setTimeout(() => {
+        // Force a page refresh if the popup is stuck for more than 10 seconds
+        console.log(
+          "[TrumpSelectionPopup] Voting complete timeout reached, refreshing game"
+        );
+        window.location.reload();
+      }, 10000); // 10 seconds
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [votingComplete]);
+
   const suits = [
     { id: "hearts", name: "Hearts", symbol: "♥", color: "text-red-500" },
     { id: "diamonds", name: "Diamonds", symbol: "♦", color: "text-red-500" },
@@ -81,7 +101,7 @@ export function TrumpSelectionPopup({
   if (!isOpen) return null;
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
@@ -101,26 +121,40 @@ export function TrumpSelectionPopup({
 
           {/* Player's hand display */}
           <div className="mb-6">
-            <h3 className="text-lg font-medieval mb-2">Your Initial Hand:</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-medieval">Your Initial 5 Cards:</h3>
+              <div className="bg-primary/20 text-primary-foreground text-xs px-2 py-1 rounded-full">
+                First 5 of 13 cards
+              </div>
+            </div>
             <div className="flex justify-center gap-2 mb-4">
-              {playerHand.map((card, index) => (
-                <div
-                  key={card.id}
-                  className="transition-all duration-200"
-                  style={{
-                    transform: `translateY(${
-                      card.suit === selectedSuit ? "-10px" : "0"
-                    })`,
-                  }}
-                >
-                  <Card
-                    suit={card.suit}
-                    value={card.value}
-                    onClick={() => setSelectedSuit(card.suit)}
-                    is3D={true}
-                  />
+              {isHandLoading ? (
+                <div className="flex flex-col items-center justify-center py-8">
+                  <LoadingSpinner size="lg" variant="primary" />
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    Dealing initial 5 cards...
+                  </p>
                 </div>
-              ))}
+              ) : (
+                playerHand.map((card, index) => (
+                  <div
+                    key={card.id}
+                    className="transition-all duration-200"
+                    style={{
+                      transform: `translateY(${
+                        card.suit === selectedSuit ? "-10px" : "0"
+                      })`,
+                    }}
+                  >
+                    <Card
+                      suit={card.suit}
+                      value={card.value}
+                      onClick={() => setSelectedSuit(card.suit)}
+                      is3D={true}
+                    />
+                  </div>
+                ))
+              )}
             </div>
             <div className="flex justify-center gap-4 text-sm text-muted-foreground">
               {suits.map((suit) => (
@@ -164,7 +198,7 @@ export function TrumpSelectionPopup({
                     onClick={() =>
                       !userVote && !votingComplete && setSelectedSuit(suit.id)
                     }
-                    disabled={!!userVote || votingComplete}
+                    disabled={!!userVote || votingComplete || isHandLoading}
                   >
                     <span className={`text-3xl mb-1 ${suit.color}`}>
                       {suit.symbol}
@@ -209,6 +243,15 @@ export function TrumpSelectionPopup({
                 <div className="flex items-center justify-center gap-3">
                   <LoadingSpinner size="md" variant="primary" />
                 </div>
+                {/* Add a close button to allow users to dismiss the popup if it gets stuck */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh Game
+                </Button>
               </div>
             ) : userVote ? (
               <div className="w-full text-center">
@@ -236,12 +279,13 @@ export function TrumpSelectionPopup({
             ) : (
               <>
                 <p className="text-sm text-muted-foreground">
-                  After trump selection, you will receive 8 more cards.
+                  After trump selection, the dealer will deal 8 more cards to
+                  complete your hand of 13 cards.
                 </p>
                 <Button
                   className="medieval-button bg-primary hover:bg-primary/90 text-primary-foreground"
                   onClick={handleVote}
-                  disabled={!selectedSuit}
+                  disabled={!selectedSuit || isHandLoading}
                 >
                   Confirm Selection
                 </Button>

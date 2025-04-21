@@ -4,80 +4,116 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/card";
 import { TurnTimer } from "@/components/turn-timer";
 import { InGameEmotes } from "@/components/in-game-emotes";
-import type { GameState } from "@/hooks/use-game-state";
-import type { Card as CardType } from "@/app/types/game";
-import { useRealtimeGameState } from "@/hooks/use-realtime-game-state";
+import { type Card as CardType, type Player } from "@/app/types/game";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { motion, AnimatePresence } from "framer-motion";
+import { useGameStore } from "@/stores/gameStore";
+import { useUIStore } from "@/stores/uiStore";
+import { useAuthStore } from "@/stores/authStore";
+
+interface CenterCard {
+  id: number;
+  suit: string;
+  value: string;
+  playedBy: string;
+}
+
+interface Emote {
+  id: number;
+  emoji: string;
+  player: string;
+  timestamp: number;
+}
 
 interface GameBoardProps {
+  roomId: string;
   gameMode: "classic" | "frenzy";
   players: string[];
-  gameState: GameState;
-  onUpdateGameState: (newState: Partial<GameState>) => void;
+  gameState: any;
+  gameStatus: string;
+  initialCardsDeal: boolean;
+  onUpdateGameState: (newState: any) => void;
   onRecordMove: (move: any) => void;
-  gameStatus:
-    | "waiting"
-    | "initial_deal"
-    | "bidding"
-    | "final_deal"
-    | "playing"
-    | "ended";
-  initialCardsDeal?: boolean;
-  onPlayCard?: (card: CardType) => void;
-  onBid?: (bid: number) => void;
-  roomId: string;
-  sendMessage?: (message: any) => void;
+  onPlayCard: (card: any) => void;
+  onBid: (bid: number) => void;
+  sendMessage: (message: any) => Promise<boolean>;
 }
 
 export function GameBoard({
+  roomId,
   gameMode,
   players,
   gameState,
+  gameStatus,
+  initialCardsDeal,
   onUpdateGameState,
   onRecordMove,
-  gameStatus,
-  initialCardsDeal = false,
   onPlayCard,
-  onBid,
-  roomId,
   sendMessage,
 }: GameBoardProps) {
-  const [selectedCard, setSelectedCard] = useState<number | null>(null);
-  const [centerCards, setCenterCards] = useState<
-    Array<{ id: number; suit: string; value: string; playedBy: string }>
-  >([]);
+  // We can still use the store for UI state
+  const { trumpSuit, scores, playCard: playCardAction } = useGameStore();
+
+  const {
+    selectedCard,
+    setSelectedCard,
+    cardPlayLoading,
+    setCardPlayLoading,
+    playingCardId,
+    setPlayingCardId,
+    showTrumpPopup,
+    setShowTrumpPopup,
+  } = useUIStore();
+
+  const { user } = useAuthStore();
+
+  const [centerCards, setCenterCards] = useState<CenterCard[]>([]);
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [isTimerActive, setIsTimerActive] = useState(false);
-  const [emotes, setEmotes] = useState<
-    Array<{ id: number; emoji: string; player: string; timestamp: number }>
-  >([]);
-  const [localGameState, setLocalGameState] = useState<GameState | null>(null);
-  const [playingCardId, setPlayingCardId] = useState<number | null>(null);
-  const [cardPlayLoading, setCardPlayLoading] = useState(false);
-  const { isConnected } = useRealtimeGameState();
+  const [emotes, setEmotes] = useState<Emote[]>([]);
 
-  // Mock player hands - full deck and initial 5 cards
-  const fullPlayerHand = [
-    { id: 1, suit: "hearts", value: "A" },
-    { id: 2, suit: "spades", value: "K" },
-    { id: 3, suit: "diamonds", value: "Q" },
-    { id: 4, suit: "clubs", value: "J" },
-    { id: 5, suit: "hearts", value: "10" },
-    { id: 6, suit: "spades", value: "9" },
-    { id: 7, suit: "diamonds", value: "8" },
-    { id: 8, suit: "clubs", value: "7" },
-    { id: 9, suit: "hearts", value: "6" },
-    { id: 10, suit: "spades", value: "5" },
-    { id: 11, suit: "diamonds", value: "4" },
-    { id: 12, suit: "clubs", value: "3" },
-    { id: 13, suit: "hearts", value: "2" },
-  ];
+  // Use the provided onRecordMove function
+  const recordMove = (move: any) => {
+    console.log("[GameBoard] Recording move:", move);
+    onRecordMove(move);
+  };
 
-  const initialHand = fullPlayerHand.slice(0, 5);
+  // Get player hand from game state or use mock data if not available
+  const getPlayerHand = () => {
+    if (gameState && user) {
+      // Try to find the player in the game state
+      const player = gameState.players?.find((p) => p.id === user.id);
+      if (player && player.hand && player.hand.length > 0) {
+        return player.hand.map((card, index) => ({
+          id: index,
+          suit: card.suit,
+          value: card.rank || card.value,
+        }));
+      }
+    }
 
-  // Determine which hand to use based on initialCardsDeal prop
-  const playerHand = initialCardsDeal ? initialHand : fullPlayerHand;
+    // Fallback to mock data if no hand is found
+    const mockHand = [
+      { id: 1, suit: "hearts", value: "A" },
+      { id: 2, suit: "spades", value: "K" },
+      { id: 3, suit: "diamonds", value: "Q" },
+      { id: 4, suit: "clubs", value: "J" },
+      { id: 5, suit: "hearts", value: "10" },
+      { id: 6, suit: "spades", value: "9" },
+      { id: 7, suit: "diamonds", value: "8" },
+      { id: 8, suit: "clubs", value: "7" },
+      { id: 9, suit: "hearts", value: "6" },
+      { id: 10, suit: "spades", value: "5" },
+      { id: 11, suit: "diamonds", value: "4" },
+      { id: 12, suit: "clubs", value: "3" },
+      { id: 13, suit: "hearts", value: "2" },
+    ];
+
+    return initialCardsDeal ? mockHand.slice(0, 5) : mockHand;
+  };
+
+  // Get the player's hand
+  const playerHand = getPlayerHand();
 
   // Start the timer when the game is in playing state
   useEffect(() => {
@@ -119,11 +155,11 @@ export function GameBoard({
         const { playerId, card } = event.data.payload;
 
         // Find the player who played the card
-        const playerIndex = players.findIndex((p) => p === playerId);
-        const playerName = playerIndex >= 0 ? players[playerIndex] : playerId;
+        const playerObj = players.find((p) => p.id === playerId);
+        const playerName = playerObj ? playerObj.name : playerId;
 
         // Convert the card to the format expected by the UI
-        const uiCard = {
+        const uiCard: CenterCard = {
           id:
             typeof card.id === "string"
               ? parseInt(card.id.split("-")[1])
@@ -146,14 +182,14 @@ export function GameBoard({
         setCurrentPlayerIndex((prev) => (prev + 1) % 4);
 
         // Record the move
-        onRecordMove({
+        recordMove({
           type: "playCard",
           player: playerName,
           card: uiCard,
         });
 
         // Reset card play loading state
-        if (playerName === players[0]) {
+        if (playerName === (user?.username || "")) {
           setCardPlayLoading(false);
           setPlayingCardId(null);
         }
@@ -166,7 +202,7 @@ export function GameBoard({
     return () => {
       window.removeEventListener("message", handleCardPlayed);
     };
-  }, [gameStatus, players, onRecordMove]);
+  }, [gameStatus, players, user]);
 
   // Clear center cards after all players have played
   useEffect(() => {
@@ -175,21 +211,27 @@ export function GameBoard({
 
       const timer = setTimeout(() => {
         // Determine winner of the trick
-        const winningPlayer = players[Math.floor(Math.random() * 4)];
+        const winningPlayerName =
+          players.length > 0
+            ? players[Math.floor(Math.random() * Math.min(4, players.length))]
+                .name
+            : "";
 
         // Record the trick result
-        onRecordMove({
+        recordMove({
           type: "trickComplete",
-          winner: winningPlayer,
+          winner: winningPlayerName,
           cards: [...centerCards],
         });
 
-        // Update scores
+        // Update scores using the provided function
+        const team = Math.random() > 0.5 ? "royals" : "rebels";
+        const newScores = {
+          ...scores,
+          [team]: scores[team] + 1,
+        };
         onUpdateGameState({
-          scores: {
-            ...gameState?.scores,
-            [winningPlayer]: (gameState?.scores[winningPlayer] || 0) + 1,
-          },
+          scores: newScores,
         });
 
         setCenterCards([]);
@@ -199,17 +241,31 @@ export function GameBoard({
 
       return () => clearTimeout(timer);
     }
-  }, [
-    centerCards,
-    players,
-    gameState?.scores,
-    onUpdateGameState,
-    onRecordMove,
-  ]);
+  }, [centerCards, players, scores, onUpdateGameState, recordMove]);
 
   const handleCardClick = (cardId: number) => {
-    if (gameStatus !== "playing" || currentPlayerIndex !== 0 || cardPlayLoading)
+    const { showToast } = useUIStore.getState();
+
+    // Check if we're in the playing phase
+    if (gameStatus !== "playing") {
+      console.log(`[GameBoard] Cannot play card in ${gameStatus} phase`);
+      showToast(
+        `Cannot play card yet. Current phase: ${gameStatus}`,
+        "warning"
+      );
       return;
+    }
+
+    // Check if it's the player's turn
+    if (currentPlayerIndex !== 0) {
+      showToast("Not your turn to play", "warning");
+      return;
+    }
+
+    // Check if a card is already being played
+    if (cardPlayLoading) {
+      return;
+    }
 
     setSelectedCard(cardId);
     setPlayingCardId(cardId);
@@ -225,382 +281,319 @@ export function GameBoard({
     // Convert the card to the proper format for the API
     const apiCard = {
       id: `${card.suit}-${card.value}`,
-      suit: card.suit,
-      rank: card.value,
+      suit: card.suit as any,
+      rank: card.value as any,
     };
 
     console.log("[GameBoard] Playing card:", apiCard);
 
-    // If we have an onPlayCard callback, use it
-    if (onPlayCard) {
-      onPlayCard(apiCard);
-    }
-
-    // If we have a sendMessage function, use it to send the card to the server
-    if (sendMessage) {
-      try {
-        // Get the current player's ID from the game state
-        // This is more reliable than using players[0] which is just the name
-        const currentPlayerId = onPlayCard ? null : players[0]; // If we have onPlayCard, let it handle the player ID
-
-        if (!onPlayCard && !currentPlayerId) {
-          console.error("[GameBoard] Cannot play card, player ID not found");
-          setCardPlayLoading(false);
-          setPlayingCardId(null);
-          return;
-        }
-
-        // If we have onPlayCard, use it (it will handle getting the player ID)
-        // Otherwise, send the message directly with the player ID
-        if (!onPlayCard) {
-          console.log(
-            `[GameBoard] Sending play card message with player ID: ${currentPlayerId}`
-          );
-          sendMessage({
-            type: "game:play-card",
-            payload: {
-              roomId,
-              playerId: currentPlayerId,
-              card: apiCard,
-            },
-          });
-        }
-
-        // Note: We don't update the UI here - we'll wait for the server to send us a card-played event
-        // This ensures consistency between all clients
-
-        // If the server doesn't respond within 5 seconds, reset the loading state
-        setTimeout(() => {
-          if (cardPlayLoading) {
-            console.log(
-              "[GameBoard] Card play timeout - resetting loading state"
-            );
-            setCardPlayLoading(false);
-            setPlayingCardId(null);
-          }
-        }, 5000);
-      } catch (error) {
-        console.error("[GameBoard] Error sending play card message:", error);
-        setCardPlayLoading(false);
-        setPlayingCardId(null);
-      }
-    } else {
-      // Fallback to local simulation if no sendMessage function
-      setTimeout(() => {
-        // Add card to center
-        const playedCard = {
-          ...card,
-          playedBy: players[0], // First player is always the user
-        };
-
-        setCenterCards((prev) => [...prev, playedCard]);
-
-        // Record the move
-        onRecordMove({
-          type: "playCard",
-          player: players[0],
-          card: playedCard,
-        });
-
-        setCardPlayLoading(false);
-        setPlayingCardId(null);
-      }, 800); // Simulate a slight delay for the animation
-    }
+    // Use the provided onPlayCard function
+    onPlayCard(apiCard);
   };
 
   const handleEmote = (emoji: string) => {
-    const newEmote = {
+    if (!user) return;
+
+    const newEmote: Emote = {
       id: Date.now(),
       emoji,
-      player: players[0],
+      player: user.username,
       timestamp: Date.now(),
     };
 
     setEmotes((prev) => [...prev, newEmote]);
 
-    // Simulate AI response
+    // Send emote to other players
+    if (sendMessage) {
+      sendMessage({
+        type: "game:emote",
+        payload: {
+          roomId,
+          playerId: user.id,
+          emoji,
+        },
+      });
+    }
+
+    // Auto-remove emote after 3 seconds
     setTimeout(() => {
-      const aiPlayer =
-        players[Math.floor(Math.random() * (players.length - 1)) + 1];
-      const aiEmojis = ["👍", "🤔", "😄", "👏", "🃏", "♠️", "♥️", "♦️", "♣️"];
-      const aiEmoji = aiEmojis[Math.floor(Math.random() * aiEmojis.length)];
-
-      const aiEmote = {
-        id: Date.now(),
-        emoji: aiEmoji,
-        player: aiPlayer,
-        timestamp: Date.now(),
-      };
-
-      setEmotes((prev) => [...prev, aiEmote]);
-    }, 1500);
+      setEmotes((prev) => prev.filter((e) => e.id !== newEmote.id));
+    }, 3000);
   };
 
-  // Remove emotes after 3 seconds
-  useEffect(() => {
-    if (emotes.length > 0) {
-      const latestEmote = emotes[emotes.length - 1];
-      const timer = setTimeout(() => {
-        setEmotes((prev) => prev.filter((e) => e.id !== latestEmote.id));
-      }, 3000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [emotes]);
-
-  // Removed the join message effect as it's causing issues
-  // The player is already joined through the main game flow
-
+  // Render the game board
   return (
-    <div className="relative h-full min-h-[700px] border-2 border-primary/30 rounded-lg bg-card/80 backdrop-blur-sm p-6">
-      {/* Turn timer */}
-      {gameStatus === "playing" && (
-        <TurnTimer
-          isActive={isTimerActive}
-          duration={10}
-          onTimeUp={handleTimeUp}
-          currentPlayer={players[currentPlayerIndex]}
-        />
-      )}
+    <div className="relative w-full max-w-6xl mx-auto rounded-lg overflow-hidden">
+      {/* Game board container */}
+      <div className="relative aspect-[16/10] bg-gradient-to-b from-primary/5 to-primary/10 rounded-lg border border-primary/30 shadow-inner overflow-hidden">
+        <div className="absolute inset-0 bg-card-pattern opacity-20" />
 
-      {/* Trump suit indicator */}
-      <div className="absolute top-6 left-6 bg-card p-2 rounded-lg border border-border/50">
-        <p className="text-sm text-muted-foreground">Trump:</p>
-        <p className="font-medieval text-lg text-primary">
-          {gameState?.trumpSuit === "hearts" && "♥ Hearts"}
-          {gameState?.trumpSuit === "diamonds" && "♦ Diamonds"}
-          {gameState?.trumpSuit === "clubs" && "♣ Clubs"}
-          {gameState?.trumpSuit === "spades" && "♠ Spades"}
-          {!gameState?.trumpSuit && "♥ Hearts"}
-        </p>
-      </div>
-
-      {/* Scores */}
-      <div className="absolute top-6 right-6 bg-card p-2 rounded-lg border border-border/50">
-        <p className="text-sm text-muted-foreground">Score:</p>
-        <p className="font-medieval text-lg">
-          <span className="text-blue-500">
-            Royals: {gameState?.scores?.royals || 0}
-          </span>{" "}
-          |{" "}
-          <span className="text-red-500">
-            Rebels: {gameState?.scores?.rebels || 0}
-          </span>
-        </p>
-      </div>
-
-      {/* Emote display area */}
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-        {emotes.map((emote) => (
-          <div
-            key={emote.id}
-            className="flex flex-col items-center mb-2 animate-fadeUp"
-          >
-            <div className="bg-card/80 backdrop-blur-sm px-3 py-1 rounded-full border border-primary/30 mb-1">
-              <span className="text-sm font-medieval">{emote.player}</span>
-            </div>
-            <div className="text-4xl">{emote.emoji}</div>
+        {/* Top player */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center">
+          <div className="font-medieval text-sm md:text-base text-primary mb-1">
+            {players.length > 2 ? players[2]?.name || "Player 3" : "Player 3"}
           </div>
-        ))}
-      </div>
-
-      {/* Opponent at top */}
-      <div className="absolute top-24 left-1/2 -translate-x-1/2 text-center">
-        <div className="flex items-center gap-2 justify-center mb-2">
-          <p className="text-sm">{players[2] || "Opponent"}</p>
-          <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState?.scores[players[2]] || 0}
-          </div>
-        </div>
-        <div className="flex justify-center gap-1">
-          {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
-            <div
-              key={`top-${i}`}
-              className="w-8 h-12 bg-card border border-border/50 rounded-md"
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Left opponent */}
-      <div className="absolute left-10 top-1/2 -translate-y-1/2 text-center">
-        <div className="flex items-center gap-2 justify-center mb-2">
-          <p className="text-sm">{players[1] || "Opponent"}</p>
-          <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState?.scores[players[1]] || 0}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
-            <div
-              key={`left-${i}`}
-              className="w-12 h-8 bg-card border border-border/50 rounded-md"
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Right opponent */}
-      <div className="absolute right-10 top-1/2 -translate-y-1/2 text-center">
-        <div className="flex items-center gap-2 justify-center mb-2">
-          <p className="text-sm">{players[3] || "Opponent"}</p>
-          <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState?.scores[players[3]] || 0}
-          </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
-            <div
-              key={`right-${i}`}
-              className="w-12 h-8 bg-card border border-border/50 rounded-md"
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Center area for played cards */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="grid grid-cols-2 grid-rows-2 gap-6 w-64 h-64">
-          {/* Top player card */}
-          {centerCards.find((c) => c.playedBy === players[2]) && (
-            <div className="col-span-2 flex justify-center">
-              <Card
-                suit={
-                  centerCards.find((c) => c.playedBy === players[2])?.suit || ""
-                }
-                value={
-                  centerCards.find((c) => c.playedBy === players[2])?.value ||
-                  ""
-                }
-                onClick={() => {}}
-                is3D={true}
-              />
-            </div>
-          )}
-
-          {/* Left player card */}
-          {centerCards.find((c) => c.playedBy === players[1]) && (
-            <div className="flex justify-end items-center">
-              <Card
-                suit={
-                  centerCards.find((c) => c.playedBy === players[1])?.suit || ""
-                }
-                value={
-                  centerCards.find((c) => c.playedBy === players[1])?.value ||
-                  ""
-                }
-                onClick={() => {}}
-                is3D={true}
-              />
-            </div>
-          )}
-
-          {/* Right player card */}
-          {centerCards.find((c) => c.playedBy === players[3]) && (
-            <div className="flex justify-start items-center">
-              <Card
-                suit={
-                  centerCards.find((c) => c.playedBy === players[3])?.suit || ""
-                }
-                value={
-                  centerCards.find((c) => c.playedBy === players[3])?.value ||
-                  ""
-                }
-                onClick={() => {}}
-                is3D={true}
-              />
-            </div>
-          )}
-
-          {/* Bottom player (user) card */}
-          {centerCards.find((c) => c.playedBy === players[0]) && (
-            <div className="col-span-2 flex justify-center">
-              <Card
-                suit={
-                  centerCards.find((c) => c.playedBy === players[0])?.suit || ""
-                }
-                value={
-                  centerCards.find((c) => c.playedBy === players[0])?.value ||
-                  ""
-                }
-                onClick={() => {}}
-                is3D={true}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Player's hand */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-center">
-        <div className="flex items-center gap-2 justify-center mb-2">
-          <p className="text-sm">{players[0] || "You"}</p>
-          <div className="w-6 h-6 rounded-full bg-card/80 flex items-center justify-center text-xs">
-            {gameState?.scores[players[0]] || 0}
-          </div>
-        </div>
-        <div className="flex justify-center">
-          {playerHand
-            .filter((card) => !centerCards.some((c) => c.id === card.id))
-            // If initialCardsDeal is true, only show the first 5 cards
-            .slice(0, initialCardsDeal ? 5 : undefined)
-            .map((card, index, filteredHand) => (
+          <div className="flex gap-1 md:gap-2">
+            {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
               <div
-                key={card.id}
-                style={{
-                  marginLeft: index > 0 ? "-1.5rem" : "0",
-                  zIndex: index,
-                  transform: `translateY(${
-                    selectedCard === card.id ? "-1rem" : "0"
-                  })`,
-                  transition: "transform 0.2s ease",
-                }}
-                className="relative"
-                onMouseEnter={() => setSelectedCard(card.id)}
-                onMouseLeave={() => setSelectedCard(null)}
-              >
-                <div className="relative">
-                  <Card
-                    suit={card.suit}
-                    value={card.value}
-                    onClick={() => handleCardClick(card.id)}
-                    disabled={
-                      centerCards.some((c) => c.playedBy === players[0]) ||
-                      currentPlayerIndex !== 0 ||
-                      cardPlayLoading
-                    }
-                    is3D={true}
-                  />
-                  {playingCardId === card.id && cardPlayLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-md backdrop-blur-sm">
-                      <LoadingSpinner size="sm" variant="primary" />
-                    </div>
-                  )}
-                </div>
-              </div>
+                key={`top-card-${i}`}
+                className="w-3 md:w-4 h-10 md:h-14 bg-card rounded-md border border-primary/30 shadow-md transform rotate-180"
+              />
             ))}
-        </div>
-      </div>
-
-      {/* Special effects for Frenzy mode */}
-      {gameMode === "frenzy" && (
-        <div className="absolute bottom-24 right-4 bg-accent/10 p-2 rounded-lg border border-accent/30">
-          <p className="text-sm font-medieval text-accent mb-1">
-            Special Powers
-          </p>
-          <div className="flex gap-2">
-            <button className="bg-card p-1 rounded border border-border/50 text-xs">
-              Double Trump
-            </button>
-            <button className="bg-card p-1 rounded border border-border/50 text-xs">
-              Swap Card
-            </button>
           </div>
         </div>
-      )}
 
-      {/* In-game emotes */}
-      <InGameEmotes onEmote={handleEmote} />
+        {/* Left player */}
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center">
+          <div className="font-medieval text-sm md:text-base text-primary mb-1">
+            {players.length > 1 ? players[1]?.name || "Player 2" : "Player 2"}
+          </div>
+          <div className="flex flex-col gap-1">
+            {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
+              <div
+                key={`left-card-${i}`}
+                className="h-3 md:h-4 w-10 md:w-14 bg-card rounded-md border border-primary/30 shadow-md transform -rotate-90"
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Right player */}
+        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center">
+          <div className="font-medieval text-sm md:text-base text-primary mb-1">
+            {players.length > 3 ? players[3]?.name || "Player 4" : "Player 4"}
+          </div>
+          <div className="flex flex-col gap-1">
+            {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
+              <div
+                key={`right-card-${i}`}
+                className="h-3 md:h-4 w-10 md:w-14 bg-card rounded-md border border-primary/30 shadow-md transform rotate-90"
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Current trick */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="grid grid-cols-2 gap-4 md:gap-8">
+            {centerCards.map((card, index) => (
+              <motion.div
+                key={`center-card-${card.id}-${index}`}
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{
+                  type: "spring",
+                  damping: 12,
+                  stiffness: 200,
+                }}
+                className="flex flex-col items-center"
+              >
+                <div className="text-xs md:text-sm text-muted-foreground mb-1">
+                  {card.playedBy}
+                </div>
+                <Card
+                  suit={card.suit}
+                  value={card.value}
+                  onClick={() => {}} // No action when clicking played cards
+                  disabled={true}
+                  is3D={true}
+                />
+              </motion.div>
+            ))}
+          </div>
+        </div>
+
+        {/* Turn timer */}
+        {isTimerActive && (
+          <div className="absolute top-24 left-1/2 -translate-x-1/2">
+            <TurnTimer
+              duration={20}
+              onTimeUp={handleTimeUp}
+              isActive={isTimerActive}
+              currentPlayer={user?.username || "Your"}
+            />
+          </div>
+        )}
+
+        {/* Emotes */}
+        <AnimatePresence>
+          {emotes.map((emote) => (
+            <motion.div
+              key={emote.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3 }}
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-background/60 backdrop-blur-sm p-2 rounded-full shadow-lg"
+            >
+              <div className="text-4xl md:text-5xl">{emote.emoji}</div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+
+        {/* Bottom player (user) */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center">
+          {/* Game phase status for player */}
+          {gameStatus !== "playing" && (
+            <div className="mb-2 px-3 py-1 bg-card/80 backdrop-blur-sm rounded-lg border border-primary/30 shadow text-sm">
+              {gameStatus === "initial_deal" &&
+                "Waiting for initial deal to complete..."}
+              {gameStatus === "bidding" &&
+                "Trump selected. Waiting for final deal..."}
+              {gameStatus === "final_deal" && "Dealing remaining cards..."}
+              {gameStatus === "ended" && "Game has ended"}
+            </div>
+          )}
+          {gameStatus === "playing" && currentPlayerIndex !== 0 && (
+            <div className="mb-2 px-3 py-1 bg-card/80 backdrop-blur-sm rounded-lg border border-primary/30 shadow text-sm">
+              Waiting for your turn...
+            </div>
+          )}
+          {gameStatus === "playing" && currentPlayerIndex === 0 && (
+            <div className="mb-2 px-3 py-1 bg-green-800/80 backdrop-blur-sm rounded-lg border border-green-500/50 shadow text-sm animate-pulse">
+              Your turn to play!
+            </div>
+          )}
+
+          <div className="flex justify-center gap-1 md:gap-2 mb-2">
+            {playerHand.map((card) => (
+              <motion.div
+                key={`player-card-${card.id}`}
+                whileHover={{
+                  y: gameStatus === "playing" ? -10 : 0,
+                  transition: { duration: 0.2 },
+                }}
+                onClick={() => handleCardClick(card.id)}
+                className={`cursor-pointer ${
+                  selectedCard === card.id ? "transform -translate-y-4" : ""
+                } ${
+                  playingCardId === card.id
+                    ? "opacity-50 cursor-not-allowed"
+                    : ""
+                } ${
+                  gameStatus !== "playing"
+                    ? "opacity-70 filter grayscale-[30%] cursor-not-allowed"
+                    : ""
+                }`}
+              >
+                <Card
+                  suit={card.suit}
+                  value={card.value}
+                  onClick={() => handleCardClick(card.id)}
+                  disabled={
+                    playingCardId === card.id || gameStatus !== "playing"
+                  }
+                  is3D={true}
+                />
+                {playingCardId === card.id && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </div>
+          <div className="font-medieval text-primary">
+            {user?.username || "Player 1"}
+          </div>
+
+          {/* Emote controls */}
+          <InGameEmotes onEmote={handleEmote} />
+        </div>
+
+        {/* Trump suit indicator or game phase indicator */}
+        {trumpSuit ? (
+          <div className="absolute top-4 right-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow flex items-center gap-2">
+            <span className="text-sm text-foreground">Trump:</span>
+            <span className="text-2xl">
+              {trumpSuit === "hearts"
+                ? "♥️"
+                : trumpSuit === "diamonds"
+                ? "♦️"
+                : trumpSuit === "clubs"
+                ? "♣️"
+                : "♠️"}
+            </span>
+          </div>
+        ) : (
+          gameStatus === "initial_deal" && (
+            <div className="absolute top-4 right-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow">
+              <div className="text-sm font-medieval text-foreground">
+                Initial 5 cards dealt
+              </div>
+              <button
+                onClick={() => setShowTrumpPopup(true)}
+                className="mt-2 w-full bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg shadow-lg border border-primary/30 font-medieval animate-pulse"
+              >
+                Select Trump Suit
+              </button>
+            </div>
+          )
+        )}
+
+        {/* Game Phase Indicator */}
+        <div className="absolute top-4 left-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow mb-2">
+          <div className="text-xs font-semibold">Game Phase</div>
+          <div className="text-sm flex items-center gap-2">
+            {gameStatus === "initial_deal" && (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                <span>Initial Deal (5 cards)</span>
+              </>
+            )}
+            {gameStatus === "bidding" && (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                <span>Trump Selected</span>
+              </>
+            )}
+            {gameStatus === "final_deal" && (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                <span>Final Deal (8 more cards)</span>
+              </>
+            )}
+            {gameStatus === "playing" && (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <span>Playing</span>
+              </>
+            )}
+            {gameStatus === "ended" && (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                <span>Game Over</span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Scores */}
+        <div className="absolute top-20 left-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow">
+          <div className="text-xs font-semibold">Score</div>
+          <div className="flex gap-3 text-sm">
+            <div>
+              Royals: <span className="font-bold">{scores.royals}</span>
+            </div>
+            <div>
+              Rebels: <span className="font-bold">{scores.rebels}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Loading overlay */}
+        {(cardPlayLoading || gameStatus === "final_deal") && (
+          <div className="absolute inset-0 bg-background/30 backdrop-blur-sm flex items-center justify-center">
+            <div className="bg-card/90 p-4 rounded-lg shadow-lg flex flex-col items-center">
+              <LoadingSpinner size="lg" />
+              <div className="mt-2 text-foreground">
+                {cardPlayLoading && "Playing card..."}
+                {gameStatus === "final_deal" && "Dealing remaining 8 cards..."}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
