@@ -78,7 +78,7 @@ export default function GamePage() {
           <div
             className="absolute inset-0 opacity-40 dark:opacity-30" // Increased brightness
             style={{
-              backgroundImage: "url('/assets/tavern-background.jpg')",
+              backgroundImage: "url('/assets/tavern-background.png')",
               backgroundSize: "cover",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",
@@ -103,7 +103,7 @@ export default function GamePage() {
         <div
           className="absolute inset-0 opacity-40 dark:opacity-30" // Increased brightness
           style={{
-            backgroundImage: "url('/assets/tavern-background.jpg')",
+            backgroundImage: "url('/assets/tavern-background.png')",
             backgroundSize: "cover",
             backgroundPosition: "center",
             backgroundRepeat: "no-repeat",

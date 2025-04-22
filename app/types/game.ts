@@ -62,6 +62,7 @@ export interface GameState {
   trumpCaller: string | null; // ID of the player who called trump
   trumpVotes?: { [playerId: string]: Suit }; // Track votes for trump suit
   playersVoted?: string[]; // Track which players have voted
+  remainingDeck?: Card[]; // Store the remaining cards to be dealt after trump selection
 }
 
 export interface GameRoom {

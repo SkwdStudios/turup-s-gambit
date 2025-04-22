@@ -1,48 +1,70 @@
 "use client";
+import React from "react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/card";
 import { motion, AnimatePresence } from "framer-motion";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { X } from "lucide-react";
+import { Crown, Check, Clock, Users } from "lucide-react";
+import { Suit } from "@/app/types/game";
+import { useUIStore } from "@/stores/uiStore";
 
 interface TrumpSelectionPopupProps {
   onVote: (suit: string) => void;
-  userVote: string | null;
-  votes: Record<string, number>;
+  userVote: Suit | null;
+  trumpVotes: Record<string, number>;
   votingComplete: boolean;
-  playerHand: Array<{ id: number; suit: string; value: string }>;
+  playerHand: Array<{
+    id: number;
+    suit: string;
+    value: string;
+  }>;
   isOpen: boolean;
+  isCurrentUserHost: boolean;
   onForceBotVotes?: () => void;
-  isCurrentUserHost?: boolean;
 }
 
 export function TrumpSelectionPopup({
   onVote,
   userVote,
-  votes,
+  trumpVotes,
   votingComplete,
   playerHand,
   isOpen,
+  isCurrentUserHost,
   onForceBotVotes,
-  isCurrentUserHost = false,
 }: TrumpSelectionPopupProps) {
-  // Debug log to help diagnose issues with player hand
-  console.log("[TrumpSelectionPopup] Player hand:", playerHand);
+  // Get UI store for managing popup state
+  const { setShowTrumpPopup } = useUIStore();
 
-  // Show loading indicator if player hand is empty
-  const isHandLoading = playerHand.length === 0;
-  const [selectedSuit, setSelectedSuit] = useState<string | null>(null);
+  // Create default mock data if player hand is empty
+  const effectivePlayerHand =
+    playerHand.length > 0
+      ? playerHand
+      : [
+          { id: 1, suit: "hearts", value: "A" },
+          { id: 2, suit: "spades", value: "K" },
+          { id: 3, suit: "diamonds", value: "Q" },
+          { id: 4, suit: "clubs", value: "J" },
+          { id: 5, suit: "hearts", value: "10" },
+        ];
+
+  // Local state
+  const [selectedSuit, setSelectedSuit] = useState<string | null>(
+    userVote || null
+  );
   const [handAnalysis, setHandAnalysis] = useState<Record<string, number>>({
     hearts: 0,
     diamonds: 0,
     clubs: 0,
     spades: 0,
   });
+  const [isHandLoading, setIsHandLoading] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   // Analyze the player's hand to count cards by suit
   useEffect(() => {
-    if (playerHand.length > 0) {
+    if (effectivePlayerHand.length > 0) {
       const suitCounts = {
         hearts: 0,
         diamonds: 0,
@@ -50,30 +72,28 @@ export function TrumpSelectionPopup({
         spades: 0,
       };
 
-      playerHand.forEach((card) => {
-        if (card.suit in suitCounts) {
+      effectivePlayerHand.forEach((card) => {
+        // Check if the suit is a valid key in suitCounts
+        if (
+          card.suit === "hearts" ||
+          card.suit === "diamonds" ||
+          card.suit === "clubs" ||
+          card.suit === "spades"
+        ) {
           suitCounts[card.suit]++;
         }
       });
 
       setHandAnalysis(suitCounts);
     }
-  }, [playerHand]);
+  }, [effectivePlayerHand]);
 
-  // Add a timeout to automatically close the popup if it gets stuck in voting complete state
+  // Set selected suit to user vote when it changes
   useEffect(() => {
-    if (votingComplete) {
-      const timeoutId = setTimeout(() => {
-        // Force a page refresh if the popup is stuck for more than 10 seconds
-        console.log(
-          "[TrumpSelectionPopup] Voting complete timeout reached, refreshing game"
-        );
-        window.location.reload();
-      }, 10000); // 10 seconds
-
-      return () => clearTimeout(timeoutId);
+    if (userVote) {
+      setSelectedSuit(userVote);
     }
-  }, [votingComplete]);
+  }, [userVote]);
 
   const suits = [
     { id: "hearts", name: "Hearts", symbol: "♥", color: "text-red-500" },
@@ -92,24 +112,85 @@ export function TrumpSelectionPopup({
     },
   ];
 
+  // Handle trump suit selection
   const handleVote = () => {
-    if (selectedSuit) {
-      onVote(selectedSuit);
+    if (selectedSuit && !userVote) {
+      setIsHandLoading(true); // Show loading state
+      setShowConfirmation(true);
+
+      // Short delay to show animation
+      setTimeout(() => {
+        onVote(selectedSuit);
+        setIsHandLoading(false);
+      }, 500);
+    }
+  };
+
+  // Handle closing the popup
+  const handleClose = () => {
+    if (votingComplete) {
+      setShowTrumpPopup(false);
     }
   };
 
   if (!isOpen) return null;
 
+  // Count cards by suit in player's hand
+  const suitCounts: Record<string, number> = playerHand.reduce(
+    (counts, card) => {
+      counts[card.suit] = (counts[card.suit] || 0) + 1;
+      return counts;
+    },
+    {} as Record<string, number>
+  );
+
+  // Get total votes
+  const totalVotes = Object.values(trumpVotes).reduce(
+    (sum, count) => sum + count,
+    0
+  );
+
+  // Helper to get suit symbol
+  const getSuitSymbol = (suit: string) => {
+    switch (suit) {
+      case "hearts":
+        return "♥";
+      case "diamonds":
+        return "♦";
+      case "clubs":
+        return "♣";
+      case "spades":
+        return "♠";
+      default:
+        return suit;
+    }
+  };
+
+  // Helper to get suit color
+  const getSuitColor = (suit: string) => {
+    switch (suit) {
+      case "hearts":
+      case "diamonds":
+        return "text-red-500";
+      case "clubs":
+      case "spades":
+        return "text-gray-800";
+      default:
+        return "";
+    }
+  };
+
   return (
     <AnimatePresence mode="wait">
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.9 }}
-          className="bg-card w-full max-w-2xl p-6 rounded-lg border-2 border-primary/30 shadow-xl"
+          className="bg-card/95 backdrop-blur-md w-full max-w-2xl p-6 rounded-lg border-2 border-primary/30 shadow-xl"
         >
-          <div className="flex justify-between items-center mb-4">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-medieval text-primary">
               {votingComplete
                 ? "Trump Selection Complete"
@@ -121,9 +202,11 @@ export function TrumpSelectionPopup({
 
           {/* Player's hand display */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-medieval">Your Initial 5 Cards:</h3>
-              <div className="bg-primary/20 text-primary-foreground text-xs px-2 py-1 rounded-full">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-medieval text-foreground">
+                Your Initial 5 Cards:
+              </h3>
+              <div className="bg-primary/20 text-primary-foreground text-xs px-3 py-1 rounded-full">
                 First 5 of 13 cards
               </div>
             </div>
@@ -136,27 +219,28 @@ export function TrumpSelectionPopup({
                   </p>
                 </div>
               ) : (
-                playerHand.map((card, index) => (
-                  <div
+                effectivePlayerHand.map((card) => (
+                  <motion.div
                     key={card.id}
                     className="transition-all duration-200"
-                    style={{
-                      transform: `translateY(${
-                        card.suit === selectedSuit ? "-10px" : "0"
-                      })`,
+                    whileHover={{ y: -10, transition: { duration: 0.2 } }}
+                    animate={{
+                      y: card.suit === selectedSuit ? -10 : 0,
+                      transition: { duration: 0.3 },
                     }}
                   >
                     <Card
                       suit={card.suit}
                       value={card.value}
-                      onClick={() => setSelectedSuit(card.suit)}
+                      onClick={() => !userVote && setSelectedSuit(card.suit)}
                       is3D={true}
+                      disabled={!!userVote}
                     />
-                  </div>
+                  </motion.div>
                 ))
               )}
             </div>
-            <div className="flex justify-center gap-4 text-sm text-muted-foreground">
+            <div className="flex justify-center gap-6 text-sm bg-muted/50 py-2 px-4 rounded-lg border border-border/50">
               {suits.map((suit) => (
                 <div
                   key={suit.id}
@@ -164,8 +248,10 @@ export function TrumpSelectionPopup({
                     handAnalysis[suit.id] > 0 ? "font-medium" : "opacity-50"
                   }`}
                 >
-                  <span className={suit.color}>{suit.symbol}</span>
-                  <span>{handAnalysis[suit.id]}</span>
+                  <span className={`text-lg ${suit.color}`}>{suit.symbol}</span>
+                  <span className="text-foreground">
+                    {handAnalysis[suit.id]}
+                  </span>
                 </div>
               ))}
             </div>
@@ -173,7 +259,7 @@ export function TrumpSelectionPopup({
 
           {/* Trump selection */}
           <div className="mb-6">
-            <h3 className="text-lg font-medieval mb-3">
+            <h3 className="text-lg font-medieval text-foreground mb-3">
               {votingComplete
                 ? "Voting Results"
                 : userVote
@@ -181,60 +267,147 @@ export function TrumpSelectionPopup({
                 : "Choose Trump Suit"}
             </h3>
 
-            <div className="grid grid-cols-4 gap-4">
-              {suits.map((suit) => (
-                <div key={suit.id} className="relative">
-                  <Button
-                    variant="outline"
-                    className={`w-full h-20 flex flex-col items-center justify-center border-2 ${
-                      selectedSuit === suit.id || userVote === suit.id
-                        ? "border-primary"
-                        : "border-muted"
-                    } ${
-                      votingComplete || userVote
-                        ? "cursor-default"
-                        : "hover:border-primary/70"
-                    }`}
-                    onClick={() =>
-                      !userVote && !votingComplete && setSelectedSuit(suit.id)
+            {votingComplete ? (
+              <div className="text-center mb-6">
+                <p className="mb-3 text-muted-foreground">
+                  Voting complete! Results:
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {(["hearts", "diamonds", "clubs", "spades"] as Suit[]).map(
+                    (suit) => {
+                      const isWinner =
+                        Math.max(...Object.values(trumpVotes)) ===
+                        trumpVotes[suit];
+                      return (
+                        <div
+                          key={suit}
+                          className={`p-3 border rounded-lg flex justify-between items-center ${
+                            isWinner
+                              ? "bg-primary/20 border-primary/50"
+                              : "bg-muted/30 border-border/50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`text-2xl ${getSuitColor(suit)}`}>
+                              {getSuitSymbol(suit)}
+                            </span>
+                            <span className="font-medieval capitalize text-foreground">
+                              {suit}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="font-bold text-lg text-foreground">
+                              {trumpVotes[suit] || 0}
+                            </span>
+                            {isWinner && (
+                              <Crown className="h-4 w-4 text-primary" />
+                            )}
+                          </div>
+                        </div>
+                      );
                     }
-                    disabled={!!userVote || votingComplete || isHandLoading}
-                  >
-                    <span className={`text-3xl mb-1 ${suit.color}`}>
-                      {suit.symbol}
-                    </span>
-                    <span className="font-medieval text-sm">{suit.name}</span>
-                  </Button>
-
-                  {/* Recommendation badge based on hand analysis */}
-                  {!userVote &&
-                    !votingComplete &&
-                    handAnalysis[suit.id] >= 2 && (
-                      <div className="absolute -top-2 -left-2 bg-secondary text-secondary-foreground text-xs px-2 py-1 rounded-full">
-                        {handAnalysis[suit.id] >= 3 ? "Strong" : "Good"} choice
-                      </div>
-                    )}
-
-                  {votingComplete && (
-                    <div className="absolute top-2 right-2 bg-card/90 backdrop-blur-sm px-2 py-1 rounded-full border border-primary/30">
-                      <span className="text-sm font-medieval">
-                        {votes[suit.id]} votes
-                      </span>
-                    </div>
-                  )}
-
-                  {userVote === suit.id && !votingComplete && (
-                    <div className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full">
-                      Your vote
-                    </div>
                   )}
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-center mb-4 text-muted-foreground">
+                  Select a trump suit based on your hand. Your hand contains:
+                </p>
+
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  {(["hearts", "diamonds", "clubs", "spades"] as Suit[]).map(
+                    (suit) => (
+                      <button
+                        key={suit}
+                        onClick={() => !userVote && setSelectedSuit(suit)}
+                        disabled={!!userVote}
+                        className={`
+                        p-4 rounded-lg flex flex-col items-center justify-center
+                        transition-all duration-300
+                        ${
+                          selectedSuit === suit && !userVote
+                            ? "bg-primary/20 border-2 border-primary/50 shadow-lg"
+                            : userVote === suit
+                            ? "bg-primary/30 border-2 border-primary/40 shadow-lg"
+                            : "bg-card hover:bg-muted/50 border border-border/50"
+                        }
+                        ${userVote && userVote !== suit ? "opacity-50" : ""}
+                      `}
+                      >
+                        <span className={`text-4xl mb-2 ${getSuitColor(suit)}`}>
+                          {getSuitSymbol(suit)}
+                        </span>
+                        <span className="font-medieval capitalize text-foreground">
+                          {suit}
+                        </span>
+                        <div className="flex justify-between w-full mt-2 px-2">
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <span className="text-sm">
+                              {suitCounts[suit] || 0}
+                            </span>
+                            <span className="text-xs">cards</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <span className="text-sm font-bold">
+                              {trumpVotes[suit] || 0}
+                            </span>
+                            <span className="text-xs">votes</span>
+                          </div>
+                        </div>
+                        {userVote === suit && (
+                          <div className="absolute top-2 right-2">
+                            <Check className="h-5 w-5 text-green-400" />
+                          </div>
+                        )}
+                      </button>
+                    )
+                  )}
+                </div>
+
+                <div className="mt-4 text-center">
+                  {userVote ? (
+                    <p className="text-foreground flex items-center justify-center gap-2">
+                      <Check className="h-4 w-4 text-primary" />
+                      You voted for{" "}
+                      <span
+                        className={`${getSuitColor(userVote)} font-bold mx-1`}
+                      >
+                        {getSuitSymbol(userVote)}
+                      </span>
+                      <span className="capitalize">{userVote}</span>
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      Please select a trump suit
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-center gap-2 mt-3 text-muted-foreground">
+                    <Clock className="h-4 w-4" />
+                    <span>
+                      Waiting for all players to vote... ({totalVotes} of 4
+                      votes)
+                    </span>
+                  </div>
+
+                  {isCurrentUserHost && onForceBotVotes && (
+                    <Button
+                      onClick={onForceBotVotes}
+                      className="mt-4 medieval-button bg-primary hover:bg-primary/90 text-primary-foreground"
+                      disabled={votingComplete}
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Force Bots to Vote
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Action area */}
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center border-t border-border pt-4">
             {votingComplete ? (
               <div className="w-full text-center">
                 <p className="text-sm text-muted-foreground mb-4">
@@ -248,32 +421,18 @@ export function TrumpSelectionPopup({
                   variant="outline"
                   size="sm"
                   className="mt-4"
-                  onClick={() => window.location.reload()}
+                  onClick={handleClose}
                 >
-                  Refresh Game
+                  Continue
                 </Button>
               </div>
             ) : userVote ? (
               <div className="w-full text-center">
                 <div className="flex flex-col items-center justify-center gap-3">
-                  <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
                     <LoadingSpinner size="sm" />
-                    <span className="text-sm">
-                      Waiting for other players to vote...
-                    </span>
+                    <span>Waiting for other players to vote...</span>
                   </div>
-
-                  {/* Force bot votes button - only shown to host */}
-                  {isCurrentUserHost && onForceBotVotes && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2 text-xs"
-                      onClick={onForceBotVotes}
-                    >
-                      Force Bot Votes
-                    </Button>
-                  )}
                 </div>
               </div>
             ) : (

@@ -161,10 +161,6 @@ export function makeBotVote(
 export function detectBotsByName(players: any[]): any[] {
   // Common bot name patterns
   const botNamePatterns = [
-    /^Sir /,
-    /^Lady /,
-    /^King /,
-    /^Queen /,
     /^Merlin$/,
     /^Lancelot$/,
     /^Galahad$/,

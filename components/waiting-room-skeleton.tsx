@@ -19,7 +19,7 @@ export function WaitingRoomSkeleton() {
       >
         <Skeleton className="h-8 w-48 mx-auto mb-4" />
       </motion.div>
-      
+
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -27,7 +27,7 @@ export function WaitingRoomSkeleton() {
       >
         <Skeleton className="h-5 w-64 mx-auto mb-4" />
       </motion.div>
-      
+
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -36,13 +36,21 @@ export function WaitingRoomSkeleton() {
       >
         <Skeleton className="h-10 w-40 mx-auto" />
       </motion.div>
-      
+
       <div className="grid grid-cols-4 gap-4">
         {[0, 1, 2, 3].map((index) => (
           <PlayerSkeleton key={index} index={index} delay={0.5 + index * 0.1} />
         ))}
       </div>
-      
+
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.9 }}
+        className="mt-4"
+      >
+        <Skeleton className="h-5 w-32 mx-auto" />
+      </motion.div>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

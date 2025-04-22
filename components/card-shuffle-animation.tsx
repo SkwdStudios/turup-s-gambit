@@ -56,15 +56,12 @@ export function CardShuffleAnimation({
 
     setCards(generatedCards);
 
-    // Call onComplete after animation finishes
-    if (onComplete) {
-      const timer = setTimeout(() => {
-        onComplete();
-      }, 2500); // Slightly less than the animation duration
+    const timer = setTimeout(() => {
+      onComplete && onComplete();
+    }, 2500); // Slightly less than the animation duration
 
-      return () => clearTimeout(timer);
-    }
-  }, [onComplete]);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">

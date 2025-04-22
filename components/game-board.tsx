@@ -84,11 +84,14 @@ export function GameBoard({
       // Try to find the player in the game state
       const player = gameState.players?.find((p) => p.id === user.id);
       if (player && player.hand && player.hand.length > 0) {
-        return player.hand.map((card, index) => ({
+        const cards = player.hand.map((card, index) => ({
           id: index,
           suit: card.suit,
           value: card.rank || card.value,
         }));
+
+        // Important: Only return the first 5 cards during initial deal
+        return initialCardsDeal ? cards.slice(0, 5) : cards;
       }
     }
 
@@ -109,6 +112,7 @@ export function GameBoard({
       { id: 13, suit: "hearts", value: "2" },
     ];
 
+    // Return only first 5 cards for initial deal
     return initialCardsDeal ? mockHand.slice(0, 5) : mockHand;
   };
 
@@ -319,6 +323,35 @@ export function GameBoard({
     setTimeout(() => {
       setEmotes((prev) => prev.filter((e) => e.id !== newEmote.id));
     }, 3000);
+  };
+
+  // Handle playing a card
+  const handlePlayCard = (card: any) => {
+    console.log("[GameBoard] Playing card:", card);
+
+    // Disable clicking if a card is already being played
+    if (cardPlayLoading || playingCardId) {
+      console.log("[GameBoard] Card play in progress, ignoring new card play");
+      return;
+    }
+
+    // Set loading state to prevent clicking multiple cards
+    setCardPlayLoading(true);
+    setPlayingCardId(card.id);
+
+    // Delay to show animation
+    setTimeout(() => {
+      // Call the onPlayCard callback to actually play the card
+      if (onPlayCard) {
+        console.log("[GameBoard] Sending card play to game store:", card);
+        onPlayCard(card);
+      } else {
+        console.error("[GameBoard] No onPlayCard handler provided");
+        // Reset state if no handler
+        setCardPlayLoading(false);
+        setPlayingCardId(null);
+      }
+    }, 500);
   };
 
   // Render the game board

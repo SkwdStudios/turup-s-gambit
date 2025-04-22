@@ -217,100 +217,61 @@ export class GameManager {
   }
 
   public startGame(roomId: string): void {
-    console.log(`[GameManager] Starting game in room ${roomId}`);
-
     const room = this.rooms.get(roomId);
-    if (!room) {
-      console.error(
-        `[GameManager] Cannot start game: Room ${roomId} not found`
-      );
-      throw new Error(`Room ${roomId} not found`);
-    }
+    if (!room) return;
 
-    console.log(`[GameManager] Room has ${room.players.length} players`);
+    // Generate and shuffle a new deck
+    const deck = this.shuffleDeck(this.generateDeck());
 
-    // Allow starting with fewer than 4 players in development
-    if (room.players.length < 2) {
-      console.error(
-        `[GameManager] Cannot start game: Not enough players (${room.players.length})`
-      );
-      throw new Error(
-        `Game needs at least 2 players, but only has ${room.players.length}`
-      );
-    }
-
-    // Set up teams - partners sit opposite each other (0,2 and 1,3)
-    let royals: string[] = [];
-    let rebels: string[] = [];
-
-    // Handle different player counts
-    if (room.players.length === 4) {
-      // Full game: partners sit opposite each other (0,2 and 1,3)
-      royals = [room.players[0].id, room.players[2].id]; // The Royals team
-      rebels = [room.players[1].id, room.players[3].id]; // The Rebels team
-    } else if (room.players.length === 3) {
-      // 3 players: 2 vs 1
-      royals = [room.players[0].id, room.players[2].id]; // The Royals team
-      rebels = [room.players[1].id]; // The Rebels team
-    } else if (room.players.length === 2) {
-      // 2 players: 1 vs 1
-      royals = [room.players[0].id]; // The Royals team
-      rebels = [room.players[1].id]; // The Rebels team
-    }
-
-    console.log(
-      `[GameManager] Teams set up - Royals: ${royals.length} players, Rebels: ${rebels.length} players`
-    );
-
-    // Generate and shuffle the deck
-    const deck = this.generateDeck();
-
-    // Initial deal - 5 cards per player
-    const initialCardsPerPlayer = 5;
-    room.players.forEach((player, index) => {
-      const start = index * initialCardsPerPlayer;
-      const end = start + initialCardsPerPlayer;
-      player.hand = deck.slice(start, end);
-    });
-
-    // Store the deck for later use when dealing remaining cards
-    room.deck = deck;
-
-    // Set the dealer (random for the first game)
-    const dealerIndex = Math.floor(Math.random() * 4);
-
-    // The player to the dealer's left is the trump caller
-    const trumpCallerIndex = (dealerIndex + 1) % 4;
-    const trumpCaller = room.players[trumpCallerIndex].id;
-
-    // Update game state
-    room.gameState = {
-      ...room.gameState,
-      currentTurn: trumpCaller, // Trump caller goes first
-      trumpSuit: null,
-      currentBid: 0,
-      currentBidder: null,
-      trickCards: {},
-      roundNumber: 1,
-      gamePhase: "initial_deal", // Start with initial deal phase
-      teams: {
-        royals,
-        rebels,
-      },
-      scores: {
-        royals: 0,
-        rebels: 0,
-      },
-      consecutiveTricks: {
-        royals: 0,
-        rebels: 0,
-      },
-      lastTrickWinner: null,
-      dealerIndex,
-      trumpCaller,
-      trumpVotes: {}, // Initialize empty trump votes
-      playersVoted: [], // Initialize empty players voted array
+    // Assign teams (partners sit opposite each other)
+    room.gameState.teams = {
+      royals: [room.players[0].id, room.players[2].id],
+      rebels: [room.players[1].id, room.players[3].id],
     };
+
+    // Set dealer (random player)
+    const dealerIndex = Math.floor(Math.random() * 4);
+    room.gameState.dealerIndex = dealerIndex;
+
+    // Define trump caller (player to the left of dealer)
+    const trumpCallerIndex = (dealerIndex + 1) % 4;
+    room.gameState.trumpCaller = room.players[trumpCallerIndex].id;
+
+    // Set phase to initial deal
+    room.gameState.gamePhase = "initial_deal";
+
+    // Deal 5 cards to each player initially
+    let currentCardIndex = 0;
+    for (let i = 0; i < 5; i++) {
+      for (let j = 0; j < 4; j++) {
+        // Deal cards in clockwise order starting from the player to the dealer's left
+        const playerIndex = (dealerIndex + 1 + j) % 4;
+        const player = room.players[playerIndex];
+        player.hand.push(deck[currentCardIndex]);
+        currentCardIndex++;
+      }
+    }
+
+    // Set remaining deck for later dealing after trump selection
+    room.gameState.remainingDeck = deck.slice(20); // First 20 cards already dealt
+
+    // Set initial game state
+    room.gameState.currentTurn = room.players[trumpCallerIndex].id; // Trump caller goes first
+    room.gameState.currentBid = 0;
+    room.gameState.currentBidder = null;
+    room.gameState.trumpSuit = null;
+    room.gameState.trickCards = {};
+    room.gameState.roundNumber = 1;
+    room.gameState.scores = {
+      royals: 0,
+      rebels: 0,
+    };
+    room.gameState.consecutiveTricks = {
+      royals: 0,
+      rebels: 0,
+    };
+    room.gameState.lastTrickWinner = null;
+    room.gameState.leadSuit = null;
 
     room.lastActivity = Date.now();
   }
@@ -320,68 +281,126 @@ export class GameManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
+    // Only allow voting during initial_deal phase
     if (room.gameState.gamePhase !== "initial_deal") {
-      throw new Error("Cannot vote for trump when not in initial deal phase");
+      console.log(
+        `[GameManager] Can't vote for trump in phase ${room.gameState.gamePhase}`
+      );
+      return;
     }
 
-    // Check if player has already voted
-    if (room.gameState.playersVoted?.includes(playerId)) {
-      throw new Error("Player has already voted");
-    }
-
-    // Record the vote
+    // Store the vote in the game state (local tracking)
     if (!room.gameState.trumpVotes) {
       room.gameState.trumpVotes = {};
     }
+
+    // Record the player's vote
+    room.gameState.trumpVotes[playerId] = suit;
+
+    // Track that this player has voted
     if (!room.gameState.playersVoted) {
       room.gameState.playersVoted = [];
     }
 
-    room.gameState.trumpVotes[playerId] = suit;
-    room.gameState.playersVoted.push(playerId);
+    if (!room.gameState.playersVoted.includes(playerId)) {
+      room.gameState.playersVoted.push(playerId);
+    }
 
     // Check if all players have voted
-    if (room.gameState.playersVoted.length === room.players.length) {
+    if (room.gameState.playersVoted.length >= room.players.length) {
       // Count votes for each suit
-      const voteCount: Record<Suit, number> = {
+      const voteCount: Record<string, number> = {
         hearts: 0,
         diamonds: 0,
         clubs: 0,
         spades: 0,
       };
 
-      // Count votes
-      Object.values(room.gameState.trumpVotes).forEach((votedSuit) => {
+      for (const pid in room.gameState.trumpVotes) {
+        const votedSuit = room.gameState.trumpVotes[pid];
         voteCount[votedSuit]++;
-      });
+      }
 
       // Find the suit with the most votes
       let maxVotes = 0;
-      let selectedSuit: Suit | null = null;
+      let winningSuit: Suit | null = null;
 
-      (Object.entries(voteCount) as [Suit, number][]).forEach(
-        ([suit, count]) => {
-          if (count > maxVotes) {
-            maxVotes = count;
-            selectedSuit = suit;
-          }
+      for (const suit in voteCount) {
+        if (voteCount[suit] > maxVotes) {
+          maxVotes = voteCount[suit];
+          winningSuit = suit as Suit;
         }
-      );
+      }
 
-      // If there's a tie, use the trump caller's vote
-      if (maxVotes === 1 && room.gameState.trumpCaller) {
-        selectedSuit =
-          room.gameState.trumpVotes[room.gameState.trumpCaller] || selectedSuit;
+      // In case of a tie, the trump caller's vote wins
+      if (maxVotes === 1 && room.players.length === 4) {
+        // All players voted for different suits, use trump caller's choice
+        winningSuit = room.gameState.trumpVotes[
+          room.gameState.trumpCaller as string
+        ] as Suit;
       }
 
       // Set the trump suit
-      room.gameState.trumpSuit = selectedSuit;
+      room.gameState.trumpSuit = winningSuit;
 
-      // Move to bidding phase
-      room.gameState.gamePhase = "bidding";
+      // Proceed to deal remaining cards
+      this.dealRemainingCards(roomId);
     }
 
     room.lastActivity = Date.now();
+  }
+
+  // Bot method to automatically vote for trump
+  public botVoteForTrump(roomId: string, botId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    // Only allow voting during initial_deal phase
+    if (room.gameState.gamePhase !== "initial_deal") {
+      return;
+    }
+
+    // Check if this bot has already voted
+    if (room.gameState.playersVoted?.includes(botId)) {
+      console.log(`[GameManager] Bot ${botId} already voted`);
+      return;
+    }
+
+    // Choose a random suit
+    const suits: Suit[] = ["hearts", "diamonds", "clubs", "spades"];
+    const randomSuit = suits[Math.floor(Math.random() * suits.length)];
+
+    // Cast the vote
+    this.voteForTrump(roomId, botId, randomSuit);
+  }
+
+  // Method to automatically perform bot actions when needed
+  public triggerBotActions(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    // Get all bot players
+    const bots = room.players.filter((p) => p.isBot);
+    if (bots.length === 0) return;
+
+    // Handle different game phases
+    switch (room.gameState.gamePhase) {
+      case "initial_deal":
+        // Make bots vote for trump if they haven't yet
+        for (const bot of bots) {
+          if (!room.gameState.playersVoted?.includes(bot.id)) {
+            setTimeout(() => {
+              this.botVoteForTrump(roomId, bot.id);
+            }, 1000 + Math.random() * 2000); // Random delay for natural feel
+          }
+        }
+        break;
+
+      // Handle other phases as needed
+      // case "playing":
+      //  ... handle bot playing cards
+      // break;
+    }
   }
 
   // Method to deal the remaining 8 cards after trump selection
@@ -389,39 +408,37 @@ export class GameManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    if (room.gameState.gamePhase !== "bidding") {
-      throw new Error("Cannot deal remaining cards before trump selection");
+    // Make sure we have a trump suit and remaining deck
+    if (!room.gameState.trumpSuit || !room.gameState.remainingDeck) {
+      return;
     }
 
-    // Use the stored deck if available, otherwise generate a new one
-    let remainingDeck: Card[];
-
-    if (room.deck) {
-      // Use the stored deck
-      const dealtCards = room.players.flatMap((player) => player.hand);
-      remainingDeck = room.deck.filter(
-        (card) => !dealtCards.some((dealtCard) => dealtCard.id === card.id)
-      );
-    } else {
-      // Generate a new deck and filter out already dealt cards
-      const deck = this.generateDeck();
-      const dealtCards = room.players.flatMap((player) => player.hand);
-      remainingDeck = deck.filter(
-        (card) => !dealtCards.some((dealtCard) => dealtCard.id === card.id)
-      );
-    }
-
-    // Deal 8 more cards to each player
-    const additionalCardsPerPlayer = 8;
-    room.players.forEach((player, index) => {
-      const start = index * additionalCardsPerPlayer;
-      const end = start + additionalCardsPerPlayer;
-      const additionalCards = remainingDeck.slice(start, end);
-      player.hand = [...player.hand, ...additionalCards];
-    });
-
-    // Update game state to final deal phase
+    // Set phase to final deal
     room.gameState.gamePhase = "final_deal";
+
+    // Deal the remaining 8 cards to each player
+    let currentCardIndex = 0;
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 4; j++) {
+        // Deal cards in clockwise order starting from the player to the dealer's left
+        const playerIndex = (room.gameState.dealerIndex + 1 + j) % 4;
+        const player = room.players[playerIndex];
+        player.hand.push(room.gameState.remainingDeck[currentCardIndex]);
+        currentCardIndex++;
+      }
+    }
+
+    // Sort players' hands for convenience
+    for (const player of room.players) {
+      this.sortPlayerHand(player);
+    }
+
+    // Clear the remaining deck
+    delete room.gameState.remainingDeck;
+
+    // After dealing all cards, start the playing phase
+    this.startPlayingPhase(roomId);
+
     room.lastActivity = Date.now();
   }
 
@@ -434,9 +451,9 @@ export class GameManager {
       throw new Error("Cannot start playing before final deal");
     }
 
-    // The player to the dealer's left leads the first trick
-    const firstPlayerIndex = (room.gameState.dealerIndex + 1) % 4;
-    const firstPlayerId = room.players[firstPlayerIndex].id;
+    // The player to the dealer's left (the trump caller) leads the first trick
+    // This is the same player who selected the trump suit
+    const firstPlayerId = room.gameState.trumpCaller;
 
     // Update game state to playing phase
     room.gameState.gamePhase = "playing";
@@ -583,21 +600,24 @@ export class GameManager {
 
     // Check if a team has won 7 consecutive tricks (baazi)
     if (room.gameState.consecutiveTricks[winningTeam] >= 7) {
+      // Game ends immediately if a team wins 7 consecutive tricks (baazi)
       room.gameState.gamePhase = "finished";
       return;
     }
 
     // Check if a team has won 7 tricks total
     if (room.gameState.scores[winningTeam] >= 7) {
-      // Check if all 13 tricks have been played (kot/grand baazi)
-      if (
-        room.gameState.scores[winningTeam] +
-          room.gameState.scores[losingTeam] >=
-        13
-      ) {
-        room.gameState.gamePhase = "finished";
-        return;
-      }
+      // Game ends if a team reaches 7 tricks
+      room.gameState.gamePhase = "finished";
+      return;
+    }
+
+    // Check if all 13 tricks have been played (kot/grand baazi)
+    const totalTricks =
+      room.gameState.scores.royals + room.gameState.scores.rebels;
+    if (totalTricks >= 13) {
+      room.gameState.gamePhase = "finished";
+      return;
     }
 
     // Update last trick winner
@@ -635,5 +655,24 @@ export class GameManager {
       A: 14,
     };
     return rankValues[card.rank];
+  }
+
+  private sortPlayerHand(player: Player): void {
+    // Sort by suit then by rank
+    player.hand.sort((a, b) => {
+      if (a.suit !== b.suit) {
+        // Order by suit: hearts, diamonds, clubs, spades
+        const suitOrder: Record<Suit, number> = {
+          hearts: 0,
+          diamonds: 1,
+          clubs: 2,
+          spades: 3,
+        };
+        return suitOrder[a.suit] - suitOrder[b.suit];
+      } else {
+        // If same suit, order by rank
+        return this.getCardValue(b) - this.getCardValue(a);
+      }
+    });
   }
 }

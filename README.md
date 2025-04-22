@@ -8,7 +8,7 @@ A modern card game built with Next.js, featuring real-time multiplayer gameplay 
   - Classic Mode
   - Frenzy Mode
 - 🎨 Medieval-themed UI with modern aesthetics
-- 👥 Real-time multiplayer support
+- 👥 Real-time multiplayer support with direct client-to-client communication
 - 🎵 Immersive background music
 - 🎯 Game replay system
 - 🌓 Light/Dark theme support
@@ -24,6 +24,7 @@ A modern card game built with Next.js, featuring real-time multiplayer gameplay 
 - **Authentication:** Custom auth system (with anonymous login support)
 - **State Management:** Zustand
 - **Animations:** Framer Motion
+- **Real-time Communication:** Supabase Realtime (with direct client-to-client messaging)
 
 ## Getting Started
 
@@ -35,17 +36,20 @@ A modern card game built with Next.js, featuring real-time multiplayer gameplay 
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/SkwdStudios/turup-s-gambit.git
 cd turup-s-gambit
 ```
 
 2. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 3. Run the development server:
+
 ```bash
 pnpm dev
 ```
@@ -57,6 +61,7 @@ This project uses Zustand for state management. The state is organized into seve
 ### Auth Store (`stores/authStore.ts`)
 
 Manages authentication state:
+
 - User information
 - Login/logout functionality
 - Anonymous authentication
@@ -64,6 +69,7 @@ Manages authentication state:
 ### Game Store (`stores/gameStore.ts`)
 
 Manages game-related state:
+
 - Room information
 - Player information
 - Game status and phase
@@ -73,6 +79,7 @@ Manages game-related state:
 ### UI Store (`stores/uiStore.ts`)
 
 Manages UI-related state:
+
 - Modal visibility
 - Loading states
 - Card selection
@@ -81,5 +88,17 @@ Manages UI-related state:
 ### Settings Store (`stores/settingsStore.ts`)
 
 Manages user preferences:
+
 - Theme settings
 - Music and sound effect settings
+
+## Real-time Communication
+
+The game uses Supabase Realtime for real-time multiplayer functionality:
+
+- **Direct client-to-client communication** for most game actions, improving responsiveness and reducing server load
+- **Smart routing logic** that sends security-critical operations through the server for validation
+- **Fallback mechanisms** to ensure message delivery even when websocket connections fail
+- **Optimized for low latency** to provide a seamless multiplayer experience
+
+For more details, see the [Realtime Implementation Documentation](./Documentation/REALTIME_IMPLEMENTATION.md).

@@ -79,7 +79,7 @@ async function broadcastToRoom(roomId: string, message: any) {
       const channel = supabase.channel(channelName, {
         config: {
           broadcast: { self: true },
-          presence: { key: "" }, // Enable presence to improve connection reliability
+          presence: { key: channelName }, // Enable presence to improve connection reliability
         },
       });
 

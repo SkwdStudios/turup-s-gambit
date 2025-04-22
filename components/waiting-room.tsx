@@ -37,7 +37,8 @@ export function WaitingRoom({
 
   // Helper to find player details safely
   const getPlayerDetails = (playerName: string) => {
-    if (!currentRoom || !currentRoom.players) return null;
+    console.log("getPlayerDetails currentRoom:", currentRoom);
+    if (!currentRoom || !currentRoom.players || !playerName) return null;
     return currentRoom.players.find((p) => p.name === playerName);
   };
 
@@ -86,9 +87,7 @@ export function WaitingRoom({
       <div className="grid grid-cols-4 gap-4">
         {[0, 1, 2, 3].map((index) => {
           const playerName = safePlayersArray[index];
-          const playerDetails = playerName
-            ? getPlayerDetails(playerName)
-            : null;
+          const playerDetails = getPlayerDetails(playerName);
           const isEmptySlot = !playerName;
 
           return (

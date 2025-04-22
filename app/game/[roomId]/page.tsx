@@ -4,7 +4,6 @@ import React, { useState, useEffect, Suspense, useMemo } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { detectBotsByName } from "./bot-voting-helper";
 import { GameBoard } from "@/components/game-board";
-import { TrumpBidding } from "@/components/trump-bidding";
 import { TrumpSelectionPopup } from "@/components/trump-selection-popup";
 import { VisualEffects } from "@/components/visual-effects";
 import { CardShuffleAnimation } from "@/components/card-shuffle-animation";
@@ -28,81 +27,299 @@ import { useGameStore } from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useUIStore } from "@/stores/uiStore";
 
+// Import our new Supabase Realtime trump voting hook
+import { useSupabaseTrumpVoting } from "@/hooks/use-supabase-trump-voting";
+
+export enum GameStates {
+  WAITING = "waiting",
+  INITIAL_DEAL = "initial_deal",
+  BIDDING = "bidding",
+  FINAL_DEAL = "final_deal",
+  PLAYING = "playing",
+  ENDED = "ended",
+}
+
 interface GameRoomPageProps {
   params: Promise<{
     roomId: string;
   }>;
 }
 
+// Types for component props
+interface GameBackgroundProps {}
+
+interface WaitingRoomSectionProps {
+  roomId: string;
+  players: any[];
+  currentRoom: any;
+  isCurrentUserHost: boolean;
+  isAddingBots: boolean;
+  isStartingGame: boolean;
+  handleAddBots: () => void;
+  handleStartGame: () => void;
+}
+
+interface GameBoardWrapperProps {
+  roomId: string;
+  mode: string;
+  players: any[];
+  currentRoom: any;
+  gameStatus: string;
+  initialCardsDeal: boolean;
+  recordMove: any;
+  handlePlayCard: (card: any) => void;
+  handleBid: (bid: number) => void;
+  isGameBoardReady: boolean;
+}
+
+interface InitialDealSectionProps {
+  roomId: string;
+  mode: string;
+  players: any[];
+  currentRoom: any;
+  gameStatus: string;
+  showShuffleAnimation: boolean;
+  handleShuffleComplete: () => void;
+  recordMove: any;
+  handlePlayCard: (card: any) => void;
+  handleBid: (bid: number) => void;
+  isGameBoardReady: boolean;
+}
+
+interface FinalDealSectionProps {
+  roomId: string;
+  mode: string;
+  players: any[];
+  currentRoom: any;
+  gameStatus: string;
+  showShuffleAnimation: boolean;
+  setShowShuffleAnimation: (show: boolean) => void;
+  recordMove: any;
+  handlePlayCard: (card: any) => void;
+  handleBid: (bid: number) => void;
+  isGameBoardReady: boolean;
+}
+
+interface GameSidebarProps {
+  isLoading: boolean;
+  roomId: string;
+}
+
+interface GameOverlaysProps {
+  statusMessage: string | null;
+  isPhaseTransitioning: boolean;
+  phaseTransitionMessage: string;
+}
+
+// Background component
+const GameBackground: React.FC<GameBackgroundProps> = () => (
+  <div className="absolute inset-0 -z-10">
+    <div
+      className="absolute inset-0 opacity-40 dark:opacity-30"
+      style={{
+        backgroundImage: "url('/assets/game-table-bg.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+      }}
+    />
+    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background" />
+  </div>
+);
+
+// Waiting Room Section
+const WaitingRoomSection: React.FC<WaitingRoomSectionProps> = ({
+  roomId,
+  players,
+  currentRoom,
+  isCurrentUserHost,
+  isAddingBots,
+  isStartingGame,
+  handleAddBots,
+  handleStartGame,
+}) => (
+  <WaitingRoom
+    roomId={roomId}
+    players={players.map((p) => p.name)}
+    currentRoom={currentRoom}
+    isCurrentUserHost={isCurrentUserHost}
+    allPlayersJoined={players.length === 4}
+    isAddingBots={isAddingBots}
+    isStartingGame={isStartingGame}
+    onAddBots={handleAddBots}
+    onStartGame={handleStartGame}
+    onForceHostStatus={
+      process.env.NODE_ENV === "development"
+        ? () => console.log("Debug: Force host status")
+        : undefined
+    }
+  />
+);
+
+// Game Board Component
+const GameBoardWrapper: React.FC<GameBoardWrapperProps> = ({
+  roomId,
+  mode,
+  players,
+  currentRoom,
+  gameStatus,
+  initialCardsDeal,
+  recordMove,
+  handlePlayCard,
+  handleBid,
+  isGameBoardReady,
+}) => {
+  if (!isGameBoardReady) return <GameBoardSkeleton />;
+
+  return (
+    <GameBoard
+      roomId={roomId as string}
+      gameMode={mode as "classic" | "frenzy"}
+      players={players.map((p) => p.name)}
+      gameState={currentRoom?.gameState}
+      onUpdateGameState={useGameStore.getState().updateGameState}
+      onRecordMove={recordMove}
+      gameStatus={gameStatus}
+      initialCardsDeal={initialCardsDeal}
+      onPlayCard={handlePlayCard}
+      onBid={handleBid}
+      sendMessage={useGameStore.getState().sendMessage}
+    />
+  );
+};
+
+// Final Deal Section
+const FinalDealSection: React.FC<FinalDealSectionProps> = ({
+  roomId,
+  mode,
+  players,
+  currentRoom,
+  gameStatus,
+  showShuffleAnimation,
+  setShowShuffleAnimation,
+  recordMove,
+  handlePlayCard,
+  handleBid,
+  isGameBoardReady,
+}) => {
+  if (showShuffleAnimation) {
+    return (
+      <CardShuffleAnimation onComplete={() => setShowShuffleAnimation(false)} />
+    );
+  }
+
+  return (
+    <GameBoardWrapper
+      roomId={roomId}
+      mode={mode}
+      players={players}
+      currentRoom={currentRoom}
+      gameStatus={gameStatus}
+      initialCardsDeal={false}
+      recordMove={recordMove}
+      handlePlayCard={handlePlayCard}
+      handleBid={handleBid}
+      isGameBoardReady={isGameBoardReady}
+    />
+  );
+};
+
+// Game Sidebar
+const GameSidebar: React.FC<GameSidebarProps> = ({ isLoading, roomId }) => {
+  if (isLoading) {
+    return (
+      <>
+        <GameInfoSkeleton />
+        <GameControlsSkeleton />
+      </>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.5, delay: 0.2 }}
+      className="space-y-8"
+    >
+      <GameInfo roomId={roomId} />
+      <GameControls roomId={roomId} />
+    </motion.div>
+  );
+};
+
+// Overlays Component
+const GameOverlays: React.FC<GameOverlaysProps> = ({
+  statusMessage,
+  isPhaseTransitioning,
+  phaseTransitionMessage,
+}) => (
+  <>
+    <AnimatePresence>
+      {statusMessage && <StatusUpdateLoader message={statusMessage} />}
+    </AnimatePresence>
+
+    {isPhaseTransitioning && (
+      <PhaseTransitionLoader message={phaseTransitionMessage} />
+    )}
+  </>
+);
+
+// Main content component
 function GameRoomContentInner() {
-  const searchParams = useSearchParams();
+  const { mode } = useParams();
   const router = useRouter();
-  const { roomId } = useParams<{ roomId: string }>();
-  const mode = searchParams?.get("mode") || "classic";
   const { recordMove } = useReplay();
 
   // Game state from Zustand store
   const {
-    gameStatus,
+    roomId,
     currentRoom,
     players,
     isLoading,
-    statusMessage,
-    isAddingBots,
-    // setIsAddingBots,
-    showShuffleAnimation,
-    initialCardsDeal,
-    isPhaseTransitioning,
-    phaseTransitionMessage,
-    setGameMode,
-    setShowShuffleAnimation,
-    trumpSuit,
-    votingComplete,
-    setStatusMessage,
+    gameStatus: storeGameStatus,
     startGame,
     selectTrump,
     playCard,
     placeBid,
     addBots,
+    statusMessage,
+    isAddingBots,
     isGameBoardReady,
+    isPhaseTransitioning,
+    showShuffleAnimation,
+    initialCardsDeal,
+    phaseTransitionMessage,
+    setIsAddingBots,
+    setInitialCardsDeal,
+    setShowShuffleAnimation,
+    setIsPhaseTransitioning,
     setIsGameBoardReady,
+    setGameStatus,
+    setStatusMessage,
+    setPhaseTransitionMessage,
   } = useGameStore();
 
   // Auth state from Zustand store
   const { user } = useAuthStore();
 
   // UI state from Zustand store
+  const { showLoginModal, showTrumpPopup, setShowLoginModal } = useUIStore();
+
+  // Replace the mock trump votes state with our Supabase Realtime implementation
   const {
-    showLoginModal,
-    showTrumpPopup,
-    // showReplay,
-    setShowLoginModal,
-    setShowTrumpPopup,
-    // setShowReplay,
-  } = useUIStore();
+    trumpVotes,
+    userVote,
+    votingComplete,
+    handleVote,
+    handleForceBotVotes: forceBotVotes,
+  } = useSupabaseTrumpVoting(currentRoom, roomId as string, user?.id);
 
-  // Set game mode from URL
-  useEffect(() => {
-    setGameMode(mode as "classic" | "frenzy");
-  }, [mode, setGameMode]);
-
-  // Check if user is logged in
-  useEffect(() => {
-    if (!user) {
-      setShowLoginModal(true);
-    }
-  }, [user, setShowLoginModal]);
-
-  // Track which bots have already voted
-  // We don't need to track bot votes locally anymore
+  // Local component state
   const [isStartingGame, setIsStartingGame] = useState(false);
-  // Use a local state for trump votes for simplicity
-  const [trumpVotes, setTrumpVotes] = useState<Record<string, number>>({
-    hearts: 0,
-    diamonds: 0,
-    clubs: 0,
-    spades: 0,
-  });
 
   // Check if the current user is the host
   const isCurrentUserHost =
@@ -131,64 +348,19 @@ function GameRoomContentInner() {
 
     setStatusMessage("Adding bots...");
     addBots();
-
-    // Status message will be cleared by the addBots function
   };
 
-  // Handle trump voting
+  // Wrapper for trump vote function to match expected signature and handle UI state
   const handleTrumpVote = (suit: string) => {
     if (votingComplete) return;
 
     setStatusMessage(`Voting for ${suit}...`);
-    selectTrump(suit as any);
 
-    // Trigger bot voting if there are bots in the game
-    const botPlayers = detectBotsByName(players.map((p) => p.name));
-    if (botPlayers.length > 0 && currentRoom) {
-      // Simplified version for Zustand implementation
-      // In a real implementation, we would need to adapt the bot voting helper
-      // to work with our Zustand store
-      setTimeout(() => {
-        // Simulate bot votes
-        const suits = ["hearts", "diamonds", "clubs", "spades"];
-        botPlayers.forEach((_, index) => {
-          setTimeout(() => {
-            const randomSuit = suits[Math.floor(Math.random() * suits.length)];
-            const newVotes = { ...trumpVotes };
-            newVotes[randomSuit] = (newVotes[randomSuit] || 0) + 1;
-            setTrumpVotes(newVotes);
-          }, index * 800);
-        });
-      }, 1000);
-    }
+    // Call our Supabase voting handler (cast as Suit type)
+    handleVote(suit as any);
 
-    setTimeout(() => {
-      setStatusMessage(null);
-    }, 1500);
-  };
-
-  // Handle forcing all bots to vote
-  const handleForceBotVotes = () => {
-    if (!isCurrentUserHost) return;
-
-    setStatusMessage("Forcing bots to vote...");
-
-    // Simplified version for Zustand implementation
-    // In a real implementation, we would need to adapt the bot voting helper
-    // to work with our Zustand store
-    const suits = ["hearts", "diamonds", "clubs", "spades"];
-    const botPlayers = players.filter(
-      (p) => p.isBot || /^(Sir|Lady|King|Queen)/.test(p.name)
-    );
-
-    botPlayers.forEach((_, index) => {
-      setTimeout(() => {
-        const randomSuit = suits[Math.floor(Math.random() * suits.length)];
-        const newVotes = { ...trumpVotes };
-        newVotes[randomSuit] = (newVotes[randomSuit] || 0) + 1;
-        setTrumpVotes(newVotes);
-      }, index * 500);
-    });
+    // Also update game state through Zustand
+    // selectTrump(suit as any);
 
     setTimeout(() => {
       setStatusMessage(null);
@@ -222,56 +394,40 @@ function GameRoomContentInner() {
 
   // Get player hand for trump selection
   const playerHand = useMemo(() => {
-    if (!currentRoom?.players || !user?.id) return [];
+    // Define a mock hand for testing - ONLY 5 CARDS for initial deal
+    const mockHand = [
+      { id: 1, suit: "hearts", value: "A" },
+      { id: 2, suit: "spades", value: "K" },
+      { id: 3, suit: "diamonds", value: "Q" },
+      { id: 4, suit: "clubs", value: "J" },
+      { id: 5, suit: "hearts", value: "10" },
+    ];
 
-    const player = currentRoom.players.find((p) => p.id === user.id);
-    if (!player || !player.hand || !Array.isArray(player.hand)) {
-      console.log(
-        "[GameRoom] Player hand not found or invalid, using mock data"
-      );
-      // Provide mock data if hand is not available
-      return [
-        { id: 1, suit: "hearts", value: "A" },
-        { id: 2, suit: "spades", value: "K" },
-        { id: 3, suit: "diamonds", value: "Q" },
-        { id: 4, suit: "clubs", value: "J" },
-        { id: 5, suit: "hearts", value: "10" },
-      ];
-    }
-
-    return player.hand.map((card, index) => ({
-      id: index,
-      suit: card.suit,
-      value: card.rank || "?", // Fallback to a placeholder if rank is not available
-    }));
-  }, [currentRoom?.players, user?.id]);
+    // For debugging during development, just use the mock hand to ensure we have cards
+    return mockHand;
+  }, [currentRoom?.players, user]);
 
   // Set game board as ready after a delay when loading completes
   useEffect(() => {
-    if (!isLoading && currentRoom && !isGameBoardReady) {
+    if (
+      currentRoom &&
+      !isLoading &&
+      !isGameBoardReady &&
+      !isPhaseTransitioning &&
+      storeGameStatus !== "waiting"
+    ) {
       const timer = setTimeout(() => {
         setIsGameBoardReady(true);
-      }, 500);
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [isLoading, currentRoom, isGameBoardReady, setIsGameBoardReady]);
-
-  // We'll let the game store control when to show the trump selection popup
-  // This ensures it only appears after the initial 5 cards are dealt
-  useEffect(() => {
-    if (gameStatus === "initial_deal") {
-      console.log("[GameRoom] Game status changed to initial_deal");
-      // The trump popup will be shown by the game store after the shuffle animation
-    }
-  }, [gameStatus]);
 
   // Handle shuffle animation completion
   const handleShuffleComplete = () => {
     setShowShuffleAnimation(false);
     console.log("[GameRoom] Shuffle animation completed");
-
-    // We'll let the game store control when to show the trump selection popup
-    // This ensures proper sequencing of the game flow
+    setGameStatus("bidding");
   };
 
   // If user is not logged in, show login modal
@@ -279,224 +435,162 @@ function GameRoomContentInner() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <VisualEffects enableGrain />
-        <div className="absolute inset-0 -z-10">
-          <div
-            className="absolute inset-0 opacity-40 dark:opacity-30"
-            style={{
-              backgroundImage: "url('/assets/game-table-bg.jpg')",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-            }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background" />
+        <GameBackground />
+        <div className="container mx-auto px-4 py-8">
+          <WaitingRoomSkeleton />
         </div>
         <LoginModal isOpen={showLoginModal} onClose={() => router.push("/")} />
       </div>
     );
   }
 
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2">
-          {isLoading ? (
-            <WaitingRoomSkeleton />
-          ) : (
-            <>
-              {gameStatus === "waiting" && (
-                <WaitingRoom
-                  roomId={roomId}
-                  players={players.map((p) => p.name)}
-                  currentRoom={currentRoom}
-                  isCurrentUserHost={isCurrentUserHost}
-                  allPlayersJoined={players.length === 4}
-                  isAddingBots={isAddingBots}
-                  isStartingGame={isStartingGame}
-                  onAddBots={handleAddBots}
-                  onStartGame={handleStartGame}
-                  onForceHostStatus={
-                    process.env.NODE_ENV === "development"
-                      ? () => {
-                          console.log("Debug: Force host status");
-                          // This would need to be implemented in the store
-                        }
-                      : undefined
-                  }
-                />
-              )}
-
-              {gameStatus === "initial_deal" && (
-                <>
-                  {showShuffleAnimation ? (
-                    <CardShuffleAnimation onComplete={handleShuffleComplete} />
-                  ) : (
-                    <>
-                      {isGameBoardReady ? (
-                        <GameBoard
-                          roomId={roomId as string}
-                          gameMode={mode as "classic" | "frenzy"}
-                          players={players.map((p) => p.name)}
-                          gameState={currentRoom?.gameState}
-                          onUpdateGameState={(newState: any) => {
-                            useGameStore.getState().updateGameState(newState);
-                          }}
-                          onRecordMove={recordMove}
-                          gameStatus={gameStatus}
-                          initialCardsDeal={true}
-                          onPlayCard={handlePlayCard}
-                          onBid={handleBid}
-                          sendMessage={(message: any) => {
-                            return useGameStore.getState().sendMessage(message);
-                          }}
-                        />
-                      ) : (
-                        <GameBoardSkeleton />
-                      )}
-                    </>
-                  )}
-                </>
-              )}
-
-              {gameStatus === "bidding" && (
-                <>
-                  <TrumpBidding
-                    onVote={handleTrumpVote}
-                    userVote={trumpSuit as string}
-                    votes={trumpVotes}
-                    votingComplete={votingComplete}
-                  />
-                  {isGameBoardReady ? (
-                    <GameBoard
-                      roomId={roomId as string}
-                      gameMode={mode as "classic" | "frenzy"}
-                      players={players.map((p) => p.name)}
-                      gameState={currentRoom?.gameState}
-                      onUpdateGameState={(newState: any) => {
-                        useGameStore.getState().updateGameState(newState);
-                      }}
-                      onRecordMove={recordMove}
-                      gameStatus={gameStatus}
-                      initialCardsDeal={true}
-                      onPlayCard={handlePlayCard}
-                      onBid={handleBid}
-                      sendMessage={(message: any) => {
-                        return useGameStore.getState().sendMessage(message);
-                      }}
-                    />
-                  ) : (
-                    <GameBoardSkeleton />
-                  )}
-                </>
-              )}
-
-              {gameStatus === "final_deal" && (
-                <>
-                  {showShuffleAnimation ? (
-                    <CardShuffleAnimation
-                      onComplete={() => setShowShuffleAnimation(false)}
-                    />
-                  ) : isGameBoardReady ? (
-                    <GameBoard
-                      roomId={roomId as string}
-                      gameMode={mode as "classic" | "frenzy"}
-                      players={players.map((p) => p.name)}
-                      gameState={currentRoom?.gameState}
-                      onUpdateGameState={(newState: any) => {
-                        useGameStore.getState().updateGameState(newState);
-                      }}
-                      onRecordMove={recordMove}
-                      gameStatus={gameStatus}
-                      initialCardsDeal={false}
-                      onPlayCard={handlePlayCard}
-                      onBid={handleBid}
-                      sendMessage={(message: any) => {
-                        return useGameStore.getState().sendMessage(message);
-                      }}
-                    />
-                  ) : (
-                    <GameBoardSkeleton />
-                  )}
-                </>
-              )}
-
-              {(gameStatus === "playing" || gameStatus === "ended") &&
-                (isGameBoardReady ? (
-                  <GameBoard
-                    roomId={roomId as string}
-                    gameMode={mode as "classic" | "frenzy"}
-                    players={players.map((p) => p.name)}
-                    gameState={currentRoom?.gameState}
-                    onUpdateGameState={(newState: any) => {
-                      useGameStore.getState().updateGameState(newState);
-                    }}
-                    onRecordMove={recordMove}
-                    gameStatus={gameStatus}
-                    initialCardsDeal={initialCardsDeal}
-                    onPlayCard={handlePlayCard}
-                    onBid={handleBid}
-                    sendMessage={(message: any) => {
-                      return useGameStore.getState().sendMessage(message);
-                    }}
-                  />
-                ) : (
-                  <GameBoardSkeleton />
-                ))}
-            </>
-          )}
+  if (isLoading || !currentRoom) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <VisualEffects enableGrain />
+        <GameBackground />
+        <div className="container mx-auto px-4 py-8">
+          <WaitingRoomSkeleton />
         </div>
-        <div className="space-y-8">
-          {isLoading ? (
-            <>
-              <GameInfoSkeleton />
-              <GameControlsSkeleton />
-            </>
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="space-y-8"
-            >
-              <GameInfo roomId={roomId} />
-              <GameControls roomId={roomId} />
-            </motion.div>
-          )}
+      </div>
+    );
+  }
+
+  if (storeGameStatus === "waiting") {
+    console.log("Waiting room status : ", currentRoom);
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        <VisualEffects enableGrain />
+        <GameBackground />
+
+        <div className="container mx-auto px-4 py-8">
+          <h1 className="text-2xl font-bold mb-4">{storeGameStatus}</h1>
+          <WaitingRoomSection
+            roomId={roomId || ""}
+            players={players}
+            currentRoom={currentRoom}
+            isCurrentUserHost={isCurrentUserHost}
+            isAddingBots={isAddingBots}
+            isStartingGame={isStartingGame}
+            handleAddBots={handleAddBots}
+            handleStartGame={handleStartGame}
+          />
         </div>
+      </div>
+    );
+  }
 
-        {/* Status message loader */}
-        <AnimatePresence>
-          {statusMessage && <StatusUpdateLoader message={statusMessage} />}
-        </AnimatePresence>
+  if (storeGameStatus === "initial_deal") {
+    console.log("Initial deal room status : ", currentRoom);
+    console.log("Initial deal room status : ", storeGameStatus);
 
-        {/* Phase transition loader */}
-        {isPhaseTransitioning && (
-          <PhaseTransitionLoader message={phaseTransitionMessage} />
-        )}
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <VisualEffects enableGrain />
+        <GameBackground />
 
-        {/* Main loading screen */}
-        {isLoading && (
-          <div className="fixed inset-0 bg-background z-50 flex items-center justify-center">
-            <GameLoader message="Loading game room..." fullScreen />
-          </div>
-        )}
+        <div className="container mx-auto px-4 py-8">
+          <h1 className="text-2xl font-bold mb-4">{storeGameStatus}</h1>
+          {showShuffleAnimation && (
+            <CardShuffleAnimation onComplete={handleShuffleComplete} />
+          )}
+          <GameBoardSkeleton />;
+        </div>
+      </div>
+    );
+  }
 
-        {/* Trump Selection Popup - only show when explicitly triggered */}
-        {showTrumpPopup && (
+  if (storeGameStatus === "bidding") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <VisualEffects enableGrain />
+        <GameBackground />
+
+        <div className="container mx-auto px-4 py-8">
+          <h1 className="text-2xl font-bold mb-4">{storeGameStatus}</h1>
           <TrumpSelectionPopup
             onVote={handleTrumpVote}
-            userVote={trumpSuit as string}
-            votes={trumpVotes}
+            userVote={userVote}
+            trumpVotes={trumpVotes}
             votingComplete={votingComplete}
             playerHand={playerHand}
             isOpen={showTrumpPopup}
-            onForceBotVotes={handleForceBotVotes}
+            onForceBotVotes={forceBotVotes}
             isCurrentUserHost={isCurrentUserHost}
           />
+          <GameBoardSkeleton />;
+          <GameOverlays
+            statusMessage={statusMessage}
+            isPhaseTransitioning={isPhaseTransitioning}
+            phaseTransitionMessage={phaseTransitionMessage}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (storeGameStatus === "final_deal") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <VisualEffects enableGrain />
+        <GameBackground />
+
+        <div className="container mx-auto px-4 py-8">
+          <h1 className="text-2xl font-bold mb-4">{storeGameStatus}</h1>
+
+          <FinalDealSection
+            roomId={roomId || ""}
+            mode={(mode as string) || "classic"}
+            players={players}
+            currentRoom={currentRoom}
+            gameStatus={storeGameStatus}
+            showShuffleAnimation={showShuffleAnimation}
+            setShowShuffleAnimation={setShowShuffleAnimation}
+            recordMove={recordMove}
+            handlePlayCard={handlePlayCard}
+            handleBid={handleBid}
+            isGameBoardReady={isGameBoardReady}
+          />
+
+          <GameOverlays
+            statusMessage={statusMessage}
+            isPhaseTransitioning={isPhaseTransitioning}
+            phaseTransitionMessage={phaseTransitionMessage}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Render the main game content
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <VisualEffects enableGrain />
+      <GameBackground />
+
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-2xl font-bold mb-4">{storeGameStatus}</h1>
+
+        {(storeGameStatus === "playing" || storeGameStatus === "ended") && (
+          <GameBoardWrapper
+            roomId={roomId || ""}
+            mode={(mode as string) || "classic"}
+            players={players}
+            currentRoom={currentRoom}
+            gameStatus={storeGameStatus}
+            initialCardsDeal={initialCardsDeal}
+            recordMove={recordMove}
+            handlePlayCard={handlePlayCard}
+            handleBid={handleBid}
+            isGameBoardReady={isGameBoardReady}
+          />
         )}
+
+        <GameOverlays
+          statusMessage={statusMessage}
+          isPhaseTransitioning={isPhaseTransitioning}
+          phaseTransitionMessage={phaseTransitionMessage}
+        />
       </div>
     </div>
   );

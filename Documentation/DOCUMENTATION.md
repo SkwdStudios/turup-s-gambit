@@ -9,9 +9,21 @@ Turup's Gambit is a modern card game built with Next.js 15, featuring real-time 
 The application follows a layered architecture pattern:
 
 1. **Presentation Layer**: React components and UI elements
-2. **Business Logic Layer**: Custom hooks and game state management
-3. **Data Layer**: WebSocket connections and database interactions
+2. **Business Logic Layer**: Custom hooks and game state management using Zustand
+3. **Data Layer**: Supabase Realtime for WebSocket connections and database interactions
 4. **Infrastructure Layer**: Authentication, routing, and utility functions
+
+## Game Flow
+
+The game follows a structured flow with distinct phases:
+
+1. **Waiting Room (waiting)**: Players join the room and wait for the game to start
+2. **Initial Deal (initial_deal)**: 5 cards are dealt to each player
+3. **Trump Selection**: Players vote on the trump suit based on their initial hand
+4. **Bidding Phase (bidding)**: Players place bids after trump selection
+5. **Final Deal (final_deal)**: Remaining 8 cards are dealt to each player
+6. **Playing Phase (playing)**: Players take turns playing cards
+7. **Game End (ended)**: Game concludes, showing final results
 
 ## Detailed Component Documentation
 
@@ -23,15 +35,27 @@ The application follows a layered architecture pattern:
    - Handles player hands and game state visualization
    - Implements responsive layout for different screen sizes
    - Manages card positioning and game flow
+   - Conditionally renders game phases and their corresponding UI elements
 
-2. **Bidding Panel (bidding-panel.tsx)**
+2. **Trump Selection Popup (trump-selection-popup.tsx)**
+
+   - Modal component for selecting the trump suit
+   - Appears after initial 5 cards are dealt
+   - Analyzes player's hand to suggest optimal suit selection
+   - Displays votes from all players in real-time
+   - Includes timeout mechanism to force selection after a period
+   - Supports host-triggered voting for bots
+   - Shows card count by suit to help player decision-making
+   - Integrates with game state through Zustand stores
+
+3. **Bidding Panel (bidding-panel.tsx)**
 
    - Interactive bid interface with validation
    - Real-time bid updates across players
    - Visual feedback for valid/invalid bids
    - Bid history tracking
 
-3. **Card Components**:
+4. **Card Components**:
 
    - **card.tsx**
      - Individual card rendering with animations
@@ -51,28 +75,29 @@ The application follows a layered architecture pattern:
      - Trajectory calculations
      - Collision detection and handling
 
-4. **Trump Bidding (trump-bidding.tsx)**
+5. **Trump Bidding (trump-bidding.tsx)**
 
-   - Trump suit selection interface
+   - Simplified trump suit selection interface
    - Visual indicators for selected trump
    - Animation effects for trump reveal
    - Validation of trump selection rules
+   - Used during the bidding phase after trump selection
 
-5. **Game Mode Selector (game-mode-selector.tsx)**
+6. **Game Mode Selector (game-mode-selector.tsx)**
 
    - Mode selection interface
    - Mode-specific rule explanations
    - Player count validation
    - Mode transition animations
 
-6. **Turn Timer (turn-timer.tsx)**
+7. **Turn Timer (turn-timer.tsx)**
 
    - Configurable turn duration
    - Visual countdown display
    - Time extension handling
    - Turn timeout actions
 
-7. **Replay Summary (replay-summary.tsx)**
+8. **Replay Summary (replay-summary.tsx)**
    - Game replay visualization
    - Player statistics display
    - Move-by-move analysis
@@ -139,6 +164,33 @@ The application follows a layered architecture pattern:
    - Screen transitions
    - Highlight effects
    - Performance optimization
+
+### Store Management
+
+1. **Game Store (gameStore.ts)**
+
+   - Central game state management
+   - Game phase transitions
+   - Player management
+   - Card dealing logic
+   - Trump suit selection handling
+   - Game scoring and tracking
+   - Realtime communication coordination
+
+2. **UI Store (uiStore.ts)**
+
+   - Modal visibility management
+   - Trump selection popup visibility
+   - Loading state management
+   - Toast notifications
+   - Card selection state
+   - Animation coordination
+
+3. **Auth Store (authStore.ts)**
+   - User authentication state
+   - Session management
+   - User profile information
+   - Authentication status checks
 
 ### Hooks
 
@@ -210,6 +262,14 @@ The application follows a layered architecture pattern:
 
 ### State Management
 
+- **Zustand**
+
+  - Lightweight state management
+  - Persistent storage with middleware
+  - DevTools integration
+  - Atomic state updates
+  - Module-based store organization
+
 - **React Context**
 
   - Global state management
@@ -225,11 +285,12 @@ The application follows a layered architecture pattern:
 
 ### Real-time Features
 
-- **WebSocket (ws)**
-  - Connection management
+- **Supabase Realtime**
+  - WebSocket connection management
+  - Broadcast capabilities
+  - Presence for player status
+  - Connection recovery
   - Message handling
-  - Reconnection logic
-  - Error handling
 
 ### Form Handling
 
@@ -270,6 +331,7 @@ app/
   about/ - Static about page
   game/
     [roomId]/ - Dynamic game room routes
+      page.tsx - Game room implementation with phase handling
   login/ - Authentication pages
   privacy-policy/ - Legal documentation
   profile/ - User profile management
@@ -281,6 +343,7 @@ components/
   card-shuffle-animation.tsx - Shuffle effects
   floating-cards.tsx - Floating card animations
   flying-cards.tsx - Card movement animations
+  trump-selection-popup.tsx - Trump suit selection modal
   game-mode-selector.tsx - Game mode selection
   turn-timer.tsx - Turn timing system
   replay-summary.tsx - Game replay interface
@@ -296,6 +359,10 @@ components/
   visual-effects.tsx - Visual effects
   ui/ - Reusable UI components
     (shadcn/ui components)
+stores/
+  gameStore.ts - Game state management
+  uiStore.ts - UI state management
+  authStore.ts - Authentication state
 hooks/
   use-auth.tsx - Auth state management
   use-game-state.tsx - Game logic
@@ -303,6 +370,7 @@ hooks/
 lib/
   db.ts - Database utilities
   utils.ts - Helper functions
+  supabase.ts - Supabase client configuration
 public/
   assets/ - Game assets
     (game assets)
@@ -312,11 +380,20 @@ public/
 
 ### Real-time Multiplayer
 
-- WebSocket-based synchronization
+- Supabase Realtime for WebSocket communication
 - Player presence detection
 - Game state replication
-- Conflict resolution
-- Connection recovery
+- Trump voting synchronization across players
+- Connection recovery with API fallback
+- Optimized message delivery
+
+### Game Phase Transitions
+
+- Clearly defined game phases (waiting, initial_deal, bidding, final_deal, playing, ended)
+- Smooth transitions between phases
+- Phase-specific UI components
+- State persistence during phase changes
+- Timeout mechanisms for phase progression
 
 ### Rich Animations
 
@@ -378,19 +455,22 @@ public/
 
 ### Game State Management
 
-1. State initialization
-2. Player actions
-3. State validation
-4. State updates
-5. UI synchronization
+1. Game initialization in waiting room
+2. Transition to initial_deal phase with 5 cards
+3. Trump selection popup appears for all players
+4. Player votes are synchronized and trump is determined
+5. Transition to bidding phase
+6. Final 8 cards are dealt in final_deal phase
+7. Main gameplay occurs in playing phase
+8. Game concludes in ended phase with score tallying
 
 ### Real-time Communication
 
-1. WebSocket connection
-2. Message handling
-3. State synchronization
-4. Error recovery
-5. Connection management
+1. WebSocket connection through Supabase Realtime
+2. Direct client-to-client messaging for non-critical operations
+3. API-based messaging for critical game state changes
+4. State synchronization with optimistic updates
+5. Connection recovery with message queuing
 
 ### Audio and Visual Effects
 
@@ -415,13 +495,13 @@ public/
 - Lazy loading
 - Image optimization
 - Animation performance
-- State management
+- Zustand for efficient state updates
 - Memory management
 
 ## Security Considerations
 
-- Authentication
-- Authorization
+- Authentication through Supabase Auth
+- Authorization for game actions
 - Data validation
 - Input sanitization
 - Error handling

@@ -5,6 +5,148 @@ import { devtools } from "zustand/middleware";
 import { useAuthStore } from "./authStore";
 import { useUIStore } from "./uiStore";
 
+// Card deck helper functions
+function createDeck(): Card[] {
+  const suits: Suit[] = ["hearts", "diamonds", "clubs", "spades"];
+  const ranks = [
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "J",
+    "Q",
+    "K",
+    "A",
+  ] as const;
+
+  const deck: Card[] = [];
+  let id = 1;
+
+  suits.forEach((suit) => {
+    ranks.forEach((rank) => {
+      deck.push({
+        id: `${rank}_of_${suit}`,
+        suit,
+        rank,
+      });
+    });
+  });
+
+  return deck;
+}
+
+function shuffleDeck(deck: Card[]): Card[] {
+  // Create a copy of the deck to avoid mutating the original
+  const shuffled = [...deck];
+
+  // Fisher-Yates shuffle algorithm
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  return shuffled;
+}
+
+// Helper function to determine the winner of a trick
+function determineTrickWinner(
+  trick: Card[],
+  trumpSuit: Suit | null
+): { playerId: string; playerName: string } {
+  // This is a simplified version - in a real game, you'd need to track which player played which card
+  // and have more sophisticated logic based on game rules
+
+  // For now, just select the highest card of the leading suit or trump
+  if (trick.length === 0) {
+    return { playerId: "", playerName: "Unknown" };
+  }
+
+  // Get the lead suit (the suit of the first card played)
+  const leadSuit = trick[0].suit;
+
+  // Get the rank ordering for comparing cards
+  const rankOrder = [
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "J",
+    "Q",
+    "K",
+    "A",
+  ];
+
+  // Find the highest card based on game rules
+  let winningCard = trick[0];
+  let winningPlayerIndex = 0;
+
+  for (let i = 1; i < trick.length; i++) {
+    const card = trick[i];
+    const isTrump = trumpSuit && card.suit === trumpSuit;
+    const isWinningCardTrump = trumpSuit && winningCard.suit === trumpSuit;
+
+    // If current card is trump and winning card is not, current card wins
+    if (isTrump && !isWinningCardTrump) {
+      winningCard = card;
+      winningPlayerIndex = i;
+    }
+    // If both cards are trump or neither is trump, compare based on rank
+    else if (
+      (isTrump && isWinningCardTrump) ||
+      (!isTrump && !isWinningCardTrump)
+    ) {
+      // If same suit, compare ranks
+      if (card.suit === winningCard.suit) {
+        const cardRankIndex = rankOrder.indexOf(card.rank);
+        const winningRankIndex = rankOrder.indexOf(winningCard.rank);
+
+        if (cardRankIndex > winningRankIndex) {
+          winningCard = card;
+          winningPlayerIndex = i;
+        }
+      }
+      // If current card follows lead suit and winning card doesn't, current card wins
+      else if (card.suit === leadSuit && winningCard.suit !== leadSuit) {
+        winningCard = card;
+        winningPlayerIndex = i;
+      }
+    }
+  }
+
+  // In a real implementation, you'd map the winning player index to a real player
+  // For now, just return a placeholder
+  return {
+    playerId: `player-${winningPlayerIndex}`,
+    playerName: `Player ${winningPlayerIndex + 1}`,
+  };
+}
+
+// Helper function to get the next player
+function getNextPlayer(currentPlayer: string): string {
+  // This is a simplified version - in a real game, you'd need to determine the next player
+  // based on the current player and the order of play
+
+  // For now, just return a placeholder for the next player
+  // In a real implementation, you'd map to the next player in order
+  return currentPlayer === "Player 1"
+    ? "Player 2"
+    : currentPlayer === "Player 2"
+    ? "Player 3"
+    : currentPlayer === "Player 3"
+    ? "Player 4"
+    : "Player 1";
+}
+
 export type GameMode = "classic" | "frenzy";
 export type GameStatus =
   | "waiting"
@@ -30,6 +172,7 @@ interface GameStoreState {
   scores: { royals: number; rebels: number };
   currentPlayer: string;
   specialPowers?: Record<string, boolean>;
+  remainingDeck?: Card[]; // Remaining cards for final deal
 
   // UI state flags for game flow
   showShuffleAnimation: boolean;
@@ -98,6 +241,7 @@ export const useGameStore = create<GameStoreState>()(
         scores: { royals: 0, rebels: 0 },
         currentPlayer: "",
         specialPowers: undefined,
+        remainingDeck: undefined,
 
         showShuffleAnimation: false,
         initialCardsDeal: false,
@@ -126,7 +270,11 @@ export const useGameStore = create<GameStoreState>()(
           });
         },
 
-        setGameStatus: (gameStatus) => set({ gameStatus }),
+        setGameStatus: (gameStatus) => {
+          console.log(`[GameStore] Setting game status to ${gameStatus}`);
+          set({ gameStatus });
+          console.log("[GameStore] Game status set to:", get().gameStatus);
+        },
 
         setRoomId: (roomId) => set({ roomId }),
 
@@ -350,20 +498,77 @@ export const useGameStore = create<GameStoreState>()(
 
             showToast("Game starting! Dealing initial cards...", "success");
 
-            // Simulate initial deal after animation
-            // First show the shuffle animation for the initial 5 cards
+            // Deal initial cards to players
+            const deck = createDeck();
+            const shuffledDeck = shuffleDeck(deck);
+            console.log("[GameStore] Created and shuffled deck:", {
+              deckSize: shuffledDeck.length,
+            });
+
+            // For the initial deal, each player gets 5 cards
+            const initialHands: Record<string, Card[]> = {};
+
+            // Get all players including the current user
+            const allPlayers = get().players;
+            console.log(
+              "[GameStore] Players before dealing:",
+              allPlayers.map((p) => ({ id: p.id, name: p.name }))
+            );
+
+            // Deal 5 cards to each player
+            allPlayers.forEach((player, playerIndex) => {
+              initialHands[player.id] = shuffledDeck.slice(
+                playerIndex * 5,
+                (playerIndex + 1) * 5
+              );
+              console.log(
+                `[GameStore] Dealt 5 cards to ${player.name} (ID: ${player.id})`
+              );
+            });
+
+            // Update players with their initial hands
+            set((state) => {
+              const updatedPlayers = state.players.map((player) => {
+                const playerHand = initialHands[player.id] || [];
+                console.log(
+                  `[GameStore] Updating ${player.name} (ID: ${player.id}) with ${playerHand.length} cards`
+                );
+                return {
+                  ...player,
+                  hand: playerHand,
+                };
+              });
+
+              return {
+                players: updatedPlayers,
+              };
+            });
+
+            // Set remaining deck for final deal after trump selection
+            set({ remainingDeck: shuffledDeck.slice(allPlayers.length * 5) });
+
+            console.log("[GameStore] Initial cards dealt to players");
+
+            // Show the trump selection popup after a longer delay to ensure state is updated
             setTimeout(() => {
               set({
                 showShuffleAnimation: false,
                 statusMessage: "Initial 5 cards dealt. Select trump suit.",
               });
 
-              // Give a moment for the cards to be visible before showing trump selection
-              setTimeout(() => {
-                // Now the trump selection popup should appear
-                useUIStore.getState().setShowTrumpPopup(true);
-              }, 1000);
-            }, 2000);
+              // Log the current players state before showing popup
+              console.log(
+                "[GameStore] Player hands before showing popup:",
+                get().players.map((p) => ({
+                  id: p.id,
+                  name: p.name,
+                  handLength: p.hand?.length || 0,
+                }))
+              );
+
+              // Show trump selection popup
+              useUIStore.getState().setShowTrumpPopup(true);
+            }, 3000); // Increase from 2000 to 3000 ms
           } catch (error) {
             console.error("[GameStore] Error starting game:", error);
             showToast("Error starting game. Please try again.", "error");
@@ -395,11 +600,14 @@ export const useGameStore = create<GameStoreState>()(
 
           try {
             const botNames = [
-              "Sir Botcelot",
-              "Lady Bytesalot",
-              "Duke Datasmith",
-              "Count Codeworth",
+              "Merlin",
+              "Lancelot",
+              "Galahad",
+              "Guinevere",
+              "Arthur",
+              "Morgana",
             ];
+
             const currentPlayerCount = players.length;
             const botsNeeded = Math.min(
               4 - currentPlayerCount,
@@ -454,13 +662,36 @@ export const useGameStore = create<GameStoreState>()(
                   result ? "success" : "failed"
                 }`
               );
-
-              // Slight delay between adding bots
-              await new Promise((resolve) => setTimeout(resolve, 500));
             }
 
             // Update local state with the new players
             set({ players: newPlayers });
+            set({
+              currentRoom: {
+                id: roomId,
+                gameState: get().currentRoom?.gameState || {
+                  currentTurn: null,
+                  trumpSuit: null,
+                  currentBid: 0,
+                  currentBidder: null,
+                  trickCards: {},
+                  roundNumber: 0,
+                  gamePhase: "waiting",
+                  teams: { royals: [], rebels: [] },
+                  scores: { royals: 0, rebels: 0 },
+                  consecutiveTricks: { royals: 0, rebels: 0 },
+                  lastTrickWinner: null,
+                  dealerIndex: 0,
+                  trumpCaller: null,
+                },
+                createdAt: get().currentRoom?.createdAt || Date.now(),
+                lastActivity: Date.now(),
+                players: newPlayers,
+              },
+            });
+
+            console.log("Add bots currentRoom : ", get().currentRoom);
+            console.log("Add bots currentRoom : ", get().players);
 
             // If room is now full, enable start game
             if (newPlayers.length === 4) {
@@ -482,7 +713,13 @@ export const useGameStore = create<GameStoreState>()(
         },
 
         playCard: (card) => {
-          const { roomId, currentRoom, currentPlayer, gameStatus } = get();
+          const {
+            roomId,
+            currentRoom,
+            currentPlayer,
+            gameStatus,
+            currentTrick,
+          } = get();
           const user = useAuthStore.getState().user;
           const { showToast } = useUIStore.getState();
 
@@ -497,7 +734,7 @@ export const useGameStore = create<GameStoreState>()(
               `[GameStore] Cannot play card when not in playing phase (current: ${gameStatus})`
             );
 
-            // Provide a more helpful message based on the current phase
+            // Provide more helpful message based on current phase
             let errorMessage = "";
             switch (gameStatus) {
               case "initial_deal":
@@ -523,8 +760,8 @@ export const useGameStore = create<GameStoreState>()(
             return;
           }
 
-          // Check if it's the user's turn
-          if (currentPlayer !== user.username && currentPlayer !== "") {
+          // Check if it's the user's turn - currentPlayer should be the username
+          if (currentPlayer && currentPlayer !== user.username) {
             console.error(
               `[GameStore] Not your turn. Current player: ${currentPlayer}`
             );
@@ -535,29 +772,42 @@ export const useGameStore = create<GameStoreState>()(
             return;
           }
 
-          // Send play card message (in real implementation)
+          // Check if this is a duplicate play
+          const isCardAlreadyInTrick = currentTrick.some(
+            (c) =>
+              c.id === card.id && c.suit === card.suit && c.rank === card.rank
+          );
+
+          if (isCardAlreadyInTrick) {
+            console.log(
+              "[GameStore] Card already in current trick, ignoring duplicate play"
+            );
+            return;
+          }
+
+          // Set loading state while card is being played
+          useUIStore.getState().setCardPlayLoading(true);
+          // Convert card ID to a number if needed for the UI store
+          const numericCardId =
+            typeof card.id === "string"
+              ? parseInt(card.id.replace(/\D/g, ""), 10) || 0
+              : 0;
+          useUIStore.getState().setPlayingCardId(numericCardId);
+
+          // Send play card message to the server
           get().sendMessage({
             type: "game:play-card",
             payload: {
               roomId,
               playerId: user.id,
+              playerName: user.username,
               card,
-              gamePhase: gameStatus, // Include the current game phase in the payload
+              gamePhase: gameStatus,
             },
           });
 
-          // Update current trick (in real app, this would come from the server)
-          const updatedTrick = [...get().currentTrick, card];
-          set({
-            currentTrick: updatedTrick,
-          });
-
-          // If trick is complete (4 cards), determine winner
-          if (updatedTrick.length === 4) {
-            setTimeout(() => {
-              set({ currentTrick: [] });
-            }, 1500);
-          }
+          // Local state updates will be handled by the message handler
+          // to ensure consistent state updates for all clients
         },
 
         placeBid: (bid) => {
@@ -581,7 +831,7 @@ export const useGameStore = create<GameStoreState>()(
         },
 
         selectTrump: (suit) => {
-          const { roomId, currentRoom } = get();
+          const { roomId, currentRoom, remainingDeck } = get();
           const user = useAuthStore.getState().user;
           const { setShowTrumpPopup, showToast } = useUIStore.getState();
 
@@ -609,62 +859,6 @@ export const useGameStore = create<GameStoreState>()(
 
           // Show toast notification
           showToast(`Trump suit selected: ${suit}`, "success");
-
-          // Simulate transition to next phase after a short delay
-          setTimeout(() => {
-            // Close the trump selection popup
-            setShowTrumpPopup(false);
-
-            // Move to final deal phase
-            set({
-              gameStatus: "final_deal",
-              initialCardsDeal: false,
-              statusMessage: "Dealing remaining 8 cards...",
-            });
-
-            // Show toast notification
-            showToast("Dealing remaining 8 cards...", "info");
-
-            // Then to playing phase after a longer delay to ensure all transitions complete
-            setTimeout(() => {
-              // First check if we're still in final_deal phase (to avoid race conditions)
-              if (get().gameStatus === "final_deal") {
-                set({
-                  gameStatus: "playing",
-                  statusMessage: "Game started! Your turn to play...",
-                });
-
-                // Show toast notification
-                showToast("Game started! Your turn to play...", "success");
-
-                // Broadcast that we're in playing phase
-                // Only send this message if we're the host to avoid multiple messages
-                const user = useAuthStore.getState().user;
-                const currentRoom = get().currentRoom;
-                const isHost = currentRoom?.players.some(
-                  (player) => player.id === user?.id && player.isHost
-                );
-
-                if (isHost) {
-                  console.log(
-                    "[GameStore] Host is broadcasting game:playing-started"
-                  );
-                  get().sendMessage({
-                    type: "game:playing-started",
-                    payload: {
-                      roomId,
-                      gamePhase: "playing",
-                    },
-                  });
-                }
-
-                // Clear status message after a delay
-                setTimeout(() => {
-                  set({ statusMessage: null });
-                }, 2000);
-              }
-            }, 5000); // Increased delay to ensure all transitions complete
-          }, 2000);
         },
 
         // Game state update helpers
@@ -726,7 +920,6 @@ export const useGameStore = create<GameStoreState>()(
         // Real-time communication implementation
         sendMessage: async (message) => {
           console.log("[GameStore] Sending message:", message);
-          let success = false;
 
           // Get current room ID and user info
           const { roomId } = get();
@@ -793,65 +986,48 @@ export const useGameStore = create<GameStoreState>()(
               }
             }
 
-            // First attempt: send via API endpoint for reliability
-            const response = await fetch("/api/realtime", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                ...message,
-                roomId: enhancedPayload.roomId,
-                playerName: enhancedPayload.playerName,
-                playerId: enhancedPayload.playerId,
-                // Include additional essential fields for the API
-                type: message.type,
-                payload: enhancedPayload,
-              }),
-            });
+            // Create the enhanced message with proper payload
+            const enhancedMessage = {
+              type: message.type,
+              payload: enhancedPayload,
+            };
 
-            if (response.ok) {
-              success = true;
-              console.log("[GameStore] Message sent successfully via API");
-            } else {
-              let errorText = "Unknown error";
-              try {
-                errorText = await response.text();
-                // Try to parse as JSON to get a more detailed error message
-                try {
-                  const errorJson = JSON.parse(errorText);
-                  if (errorJson.error) {
-                    errorText = errorJson.error;
-                    showToast(`Error: ${errorJson.error}`, "error");
-                  }
-                } catch (parseError) {
-                  // If it's not valid JSON, use the raw text
-                }
-              } catch (readError) {
-                console.error(
-                  "[GameStore] Error reading API response:",
-                  readError
-                );
+            // Use supabase directly for real-time communication
+            const { supabase } = await import("@/lib/supabase");
+
+            // First attempt: send via API endpoint for security-critical operations
+            const requiresServerProcessing =
+              message.type === "room:create" ||
+              message.type.includes("auth:") ||
+              message.type === "game:end";
+
+            let success = false;
+
+            if (requiresServerProcessing) {
+              // Use the server API for critical operations that need validation
+              const response = await fetch("/api/realtime", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(enhancedMessage),
+              });
+
+              if (response.ok) {
+                success = true;
+                console.log("[GameStore] Message sent successfully via API");
+              } else {
+                console.error("[GameStore] API error:", await response.text());
               }
-
-              console.error("[GameStore] API error:", errorText);
-
-              // If API fails, fall back to direct Supabase Realtime
+            } else {
+              // Use Supabase Realtime directly for non-critical operations
               try {
-                // Import dynamically to avoid server-side import issues
-                const { supabase } = await import("@/lib/supabase");
-
                 // Create channel name based on room ID
                 const channelName = `room:${roomId}`;
+                const channel = supabase.channel(channelName);
 
-                // Ensure the message has player info before sending directly
-                const enhancedMessage = {
-                  ...message,
-                  payload: enhancedPayload,
-                };
-
-                // Send message through Supabase Realtime directly
-                const result = await supabase.channel(channelName).send({
+                // Send message directly through Supabase Realtime
+                const result = await channel.send({
                   type: "broadcast",
                   event: "message",
                   payload: enhancedMessage,
@@ -863,32 +1039,52 @@ export const useGameStore = create<GameStoreState>()(
                     "[GameStore] Message sent successfully via Supabase Realtime"
                   );
                 } else {
-                  showToast(
-                    "Failed to send message through realtime channel",
-                    "error"
+                  console.error(
+                    "[GameStore] Failed to send via Supabase Realtime"
                   );
+
+                  // Fallback to API if direct channel send fails
+                  const response = await fetch("/api/realtime", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(enhancedMessage),
+                  });
+
+                  if (response.ok) {
+                    success = true;
+                    console.log(
+                      "[GameStore] Message sent successfully via API (fallback)"
+                    );
+                  }
                 }
-              } catch (supabaseError) {
+              } catch (error) {
                 console.error(
-                  "[GameStore] Supabase realtime error:",
-                  supabaseError
+                  "[GameStore] Error with Supabase Realtime:",
+                  error
                 );
-                showToast("Communication error. Please try again.", "error");
               }
             }
+
+            // Update connection status based on message success
+            if (!success) {
+              set({ isConnected: false });
+              // Show a connection lost toast
+              const uiStore = useUIStore.getState();
+              uiStore.showToast("Connection issue. Please try again.", "error");
+            }
+
+            return success;
           } catch (error) {
             console.error("[GameStore] Error sending message:", error);
-            showToast("Error sending message. Please try again.", "error");
+            const uiStore = useUIStore.getState();
+            uiStore.showToast(
+              "Error sending message. Please try again.",
+              "error"
+            );
+            return false;
           }
-
-          // Update connection status based on message success
-          if (!success) {
-            set({ isConnected: false });
-            // Show a connection lost toast
-            showToast("Connection lost. Please refresh the page.", "error");
-          }
-
-          return success;
         },
 
         subscribeToRealtime: async () => {
@@ -1046,6 +1242,66 @@ export const useGameStore = create<GameStoreState>()(
                       initialCardsDeal: true,
                       statusMessage: "Game starting... Dealing initial cards",
                     });
+
+                    // Deal initial cards to players
+                    const deck = createDeck();
+                    const shuffledDeck = shuffleDeck(deck);
+
+                    // For the initial deal, each player gets 5 cards
+                    const initialHands: Record<string, Card[]> = {};
+
+                    // Get all players including the current user
+                    const allPlayers = get().players;
+
+                    // Deal 5 cards to each player
+                    allPlayers.forEach((player, playerIndex) => {
+                      initialHands[player.id] = shuffledDeck.slice(
+                        playerIndex * 5,
+                        (playerIndex + 1) * 5
+                      );
+                    });
+
+                    // Update players with their initial hands
+                    set((state) => {
+                      const updatedPlayers = state.players.map((player) => ({
+                        ...player,
+                        hand: initialHands[player.id] || [],
+                      }));
+
+                      return {
+                        players: updatedPlayers,
+                      };
+                    });
+
+                    // Set remaining deck for final deal after trump selection
+                    set({
+                      remainingDeck: shuffledDeck.slice(allPlayers.length * 5),
+                    });
+
+                    console.log("[GameStore] Initial cards dealt to players");
+
+                    // Show the trump selection popup after a longer delay to ensure state is updated
+                    setTimeout(() => {
+                      set({
+                        showShuffleAnimation: false,
+                        statusMessage:
+                          "Initial 5 cards dealt. Select trump suit.",
+                      });
+
+                      // Log the current players state before showing popup
+                      console.log(
+                        "[GameStore] Player hands before showing popup:",
+                        get().players.map((p) => ({
+                          id: p.id,
+                          name: p.name,
+                          handLength: p.hand?.length || 0,
+                        }))
+                      );
+
+                      // Show trump selection popup
+                      useUIStore.getState().setShowTrumpPopup(true);
+                    }, 3000); // Increase from 2000 to 3000 ms
+
                     break;
 
                   case "game:play-card":
@@ -1060,19 +1316,121 @@ export const useGameStore = create<GameStoreState>()(
                       break;
                     }
 
-                    set((state) => ({
-                      currentTrick: [...state.currentTrick, playedCard],
-                    }));
+                    // Check if this card is already in the current trick
+                    const isDuplicatePlay = get().currentTrick.some(
+                      (c) =>
+                        c.id === playedCard.id &&
+                        c.suit === playedCard.suit &&
+                        c.rank === playedCard.rank
+                    );
 
-                    // If this is the current player, reset the playing card state
+                    if (isDuplicatePlay) {
+                      console.log(
+                        "[GameStore] Duplicate card play detected, ignoring:",
+                        playedCard
+                      );
+                      break;
+                    }
+
+                    console.log(
+                      "[GameStore] Adding card to current trick:",
+                      playedCard
+                    );
+
+                    // Create a deep copy of the current trick to avoid race conditions
+                    const updatedTrick = [...get().currentTrick, playedCard];
+
+                    // Get current player information
                     const currentUser = useAuthStore.getState().user;
-                    if (
+                    const isCurrentUserPlaying =
                       currentUser &&
-                      message.payload.playerId === currentUser.id
-                    ) {
+                      (message.payload.playerId === currentUser.id ||
+                        message.payload.playerName === currentUser.username);
+
+                    // Update player hands and the game state in one atomic operation
+                    set((state) => {
+                      // 1. Create updated player list with card removed from hand
+                      const updatedPlayers = state.players.map((p) => {
+                        // If this player played the card, remove it from their hand
+                        if (
+                          currentUser &&
+                          (p.id === currentUser.id ||
+                            p.name === currentUser.username) &&
+                          isCurrentUserPlaying
+                        ) {
+                          console.log(
+                            `[GameStore] Removing card ${playedCard.id} from ${p.name}'s hand`
+                          );
+                          return {
+                            ...p,
+                            hand: Array.isArray(p.hand)
+                              ? p.hand.filter((c) => c.id !== playedCard.id)
+                              : [],
+                          };
+                        }
+                        return p;
+                      });
+
+                      // 2. Return a single atomic state update
+                      return {
+                        // Update the current trick with the played card
+                        currentTrick: updatedTrick,
+                        // Update the players array with the modified hand
+                        players: updatedPlayers,
+                      };
+                    });
+
+                    // Reset UI state for card play
+                    if (isCurrentUserPlaying) {
+                      const uiStore = useUIStore.getState();
+                      uiStore.setPlayingCardId(null);
+                      uiStore.setCardPlayLoading(false);
+                    }
+
+                    // Process trick completion logic
+                    if (updatedTrick.length === 4) {
+                      console.log(
+                        "[GameStore] Trick complete, resolving winner"
+                      );
+
+                      // Simple trick resolution logic - just pick a winner
+                      const trickWinner = determineTrickWinner(
+                        updatedTrick,
+                        get().trumpSuit
+                      );
+
+                      setTimeout(() => {
+                        set({
+                          currentTrick: [],
+                          statusMessage: `${trickWinner.playerName} won the trick!`,
+                        });
+
+                        // Move to the next player (in a real game, this would be the trick winner)
+                        const nextPlayerName = currentUser?.username || "";
+
+                        setTimeout(() => {
+                          set({
+                            currentPlayer: nextPlayerName,
+                            statusMessage: `Your turn to play!`,
+                          });
+
+                          // Clear status after a delay
+                          setTimeout(() => {
+                            set({ statusMessage: null });
+                          }, 2000);
+                        }, 1500);
+                      }, 1500);
+                    } else {
+                      // Set current player to the current user's username
+                      const currentUser = useAuthStore.getState().user;
+
+                      // DO NOT create a test deck - use the player's existing hand
+                      // Just update the game status and current player
                       set({
-                        playingCardId: null,
-                        cardPlayLoading: false,
+                        gameStatus: "playing",
+                        statusMessage: "Game started! Your turn to play...",
+                        // Set current player to actual username instead of "Player 1"
+                        currentPlayer: currentUser?.username || "",
                       });
                     }
                     break;
@@ -1204,7 +1562,12 @@ export const useGameStore = create<GameStoreState>()(
                     });
 
                     // Show toast notification
-                    showToast("All cards dealt. Game starting soon...", "info");
+                    useUIStore
+                      .getState()
+                      .showToast(
+                        "All cards dealt. Game starting soon...",
+                        "info"
+                      );
 
                     // Automatically transition to playing phase after a delay
                     setTimeout(() => {
@@ -1216,10 +1579,12 @@ export const useGameStore = create<GameStoreState>()(
                         });
 
                         // Show toast notification
-                        showToast(
-                          "Game started! Your turn to play...",
-                          "success"
-                        );
+                        useUIStore
+                          .getState()
+                          .showToast(
+                            "Game started! Your turn to play...",
+                            "success"
+                          );
 
                         // Clear status message after a delay
                         setTimeout(() => {
@@ -1237,21 +1602,31 @@ export const useGameStore = create<GameStoreState>()(
 
                     // Only update if we're not already in playing phase
                     if (get().gameStatus !== "playing") {
-                      set({
-                        gameStatus: "playing",
-                        statusMessage: "Game started! Your turn to play...",
+                      // Set current player to the current user's username
+                      const currentUser = useAuthStore.getState().user;
+
+                      // DO NOT create a test deck - use the properly dealt cards
+                      // that should already be in the player's hand (5 initial + 8 after trump)
+
+                      // Just update the game status and current player
+                      set((state) => {
+                        // Log the current player hands to verify they have the correct number of cards
+                        console.log(
+                          "[GameStore] Player hands when entering playing phase:",
+                          state.players.map((p) => ({
+                            id: p.id,
+                            name: p.name,
+                            handLength: p.hand?.length || 0,
+                          }))
+                        );
+
+                        return {
+                          gameStatus: "playing",
+                          statusMessage: "Game started! Your turn to play...",
+                          // Set current player to actual username instead of "Player 1"
+                          currentPlayer: currentUser?.username || "",
+                        };
                       });
-
-                      // Show toast notification
-                      showToast(
-                        "Game started! Your turn to play...",
-                        "success"
-                      );
-
-                      // Clear status message after a delay
-                      setTimeout(() => {
-                        set({ statusMessage: null });
-                      }, 2000);
                     }
                     break;
 

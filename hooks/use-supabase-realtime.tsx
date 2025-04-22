@@ -46,14 +46,12 @@ export function useSupabaseRealtime(roomId: string) {
 
       console.log("[Supabase Realtime] Creating new channel:", channelName);
 
-      // Create a new channel with retry options
+      // Create a new channel
       const newChannel = supabase.channel(channelName, {
         config: {
           broadcast: { self: true },
           presence: { key: "" }, // Enable presence to improve connection reliability
         },
-        retryIntervalMs: 5000, // Retry every 5 seconds
-        retryTimeoutMs: 60000, // Give up after 1 minute
       });
 
       // Set up message handler
@@ -122,33 +120,26 @@ export function useSupabaseRealtime(roomId: string) {
       // We don't unsubscribe here to maintain the connection
       // The channel will be reused if the component remounts
     };
-  }, [roomId]); // Only depend on roomId
+  }, [roomId]);
 
   // Function to send a message to the channel
   const sendMessage = useCallback(
     async (message: BroadcastMessage) => {
       const channel = channelRef.current;
       let success = false;
-
-      // Special handling for room creation and joining
-      // These messages should be retried if they fail
-      const isRoomCreationMessage =
-        message.type === "player:joined" ||
-        message.type === "room:join" ||
-        message.type === "room:create";
-
-      // For room creation/joining messages, we'll retry a few times
-      const maxRetries = isRoomCreationMessage ? 3 : 1;
-      let retryCount = 0;
       let lastError = null;
 
-      while (retryCount < maxRetries) {
-        // Always try to send to our API first to ensure server-side logic is executed
+      // Check if this message requires server-side validation/processing
+      const requiresServerProcessing =
+        message.type === "room:create" ||
+        message.type.includes("auth:") ||
+        message.type === "game:end";
+
+      // If the message requires server-side processing, send it through the API
+      if (requiresServerProcessing) {
         try {
           console.log(
-            `[Supabase Realtime] Sending message to API (attempt ${
-              retryCount + 1
-            }/${maxRetries}):`,
+            "[Supabase Realtime] Sending message via API (server-side processing required):",
             message
           );
           const response = await fetch("/api/realtime", {
@@ -161,65 +152,18 @@ export function useSupabaseRealtime(roomId: string) {
 
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(
-              `[Supabase Realtime] API error (attempt ${
-                retryCount + 1
-              }/${maxRetries}):`,
-              errorText
-            );
-
-            // Store the error for potential retry
+            console.error("[Supabase Realtime] API error:", errorText);
             lastError = new Error(errorText);
-
-            // If this is a "Room not found" error and we're trying to create/join a room,
-            // we should retry after a delay
-            if (isRoomCreationMessage && errorText.includes("Room not found")) {
-              retryCount++;
-              if (retryCount < maxRetries) {
-                console.log(
-                  `[Supabase Realtime] Retrying room creation/join in ${
-                    retryCount * 1000
-                  }ms...`
-                );
-                await new Promise((resolve) =>
-                  setTimeout(resolve, retryCount * 1000)
-                );
-                continue; // Try again
-              }
-            }
           } else {
-            // API call succeeded
             success = true;
-            break; // Exit the retry loop
           }
         } catch (error) {
-          console.error(
-            `[Supabase Realtime] Failed to send to API (attempt ${
-              retryCount + 1
-            }/${maxRetries}):`,
-            error
-          );
+          console.error("[Supabase Realtime] Failed to send via API:", error);
           lastError = error;
         }
-
-        // If we're here and it's a room creation message, retry
-        if (isRoomCreationMessage && retryCount < maxRetries - 1) {
-          retryCount++;
-          console.log(
-            `[Supabase Realtime] Retrying room creation/join in ${
-              retryCount * 1000
-            }ms...`
-          );
-          await new Promise((resolve) =>
-            setTimeout(resolve, retryCount * 1000)
-          );
-        } else {
-          break; // Exit the retry loop for non-room creation messages or if we've reached max retries
-        }
       }
-
-      // Try to send through Supabase Realtime if available
-      if (channel && isConnected) {
+      // If not requiring server processing or if we're not connected yet, use WebSockets
+      else if (channel && isConnected) {
         try {
           console.log(
             "[Supabase Realtime] Sending message via WebSocket:",
@@ -227,13 +171,12 @@ export function useSupabaseRealtime(roomId: string) {
           );
 
           // Send message through Supabase Realtime
-          channel.send({
+          await channel.send({
             type: "broadcast",
             event: "message",
             payload: message,
           });
 
-          // Mark as success even if only one method worked
           success = true;
         } catch (error) {
           console.error(
@@ -241,29 +184,61 @@ export function useSupabaseRealtime(roomId: string) {
             error
           );
           lastError = error;
+
+          // If WebSocket fails, fall back to API as a backup
+          try {
+            console.log(
+              "[Supabase Realtime] Falling back to API after WebSocket failure"
+            );
+            const response = await fetch("/api/realtime", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(message),
+            });
+
+            if (response.ok) {
+              success = true;
+            }
+          } catch (fallbackError) {
+            console.error(
+              "[Supabase Realtime] Fallback API call also failed:",
+              fallbackError
+            );
+          }
         }
       } else {
-        console.warn(
-          `[Supabase Realtime] Cannot send via WebSocket: ${
-            !channel ? "No channel" : "Not connected"
-          }`
-        );
-        // We already tried the API, so we don't need to do anything else here
+        // Not connected via WebSocket, use API
+        try {
+          console.log(
+            "[Supabase Realtime] Not connected via WebSocket, using API:",
+            message
+          );
+          const response = await fetch("/api/realtime", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(message),
+          });
+
+          if (response.ok) {
+            success = true;
+          } else {
+            const errorText = await response.text();
+            console.error("[Supabase Realtime] API error:", errorText);
+          }
+        } catch (error) {
+          console.error("[Supabase Realtime] Failed to send via API:", error);
+          lastError = error;
+        }
       }
 
-      // If this is a room creation/join message and it failed, we should show a more user-friendly error
-      if (!success && isRoomCreationMessage && lastError) {
-        // Don't show an alert for every error to avoid spamming the user
-        // Just log it to the console
-        console.error(
-          "[Supabase Realtime] Failed to create/join room after multiple attempts",
-          lastError
-        );
-
-        // For room creation messages, we'll add the message to a retry queue
-        // This will be handled by the auto-retry mechanism in the useEffect
+      // Handle failed messages for critical operations
+      if (!success && lastError) {
+        // Store failed messages for retry
         if (typeof window !== "undefined") {
-          // Store the failed message in sessionStorage for potential retry
           try {
             const retryQueue = JSON.parse(
               sessionStorage.getItem("realtime-retry-queue") || "[]"
@@ -288,7 +263,7 @@ export function useSupabaseRealtime(roomId: string) {
 
       return success;
     },
-    [isConnected] // Only depend on isConnected
+    [isConnected]
   );
 
   // Retry mechanism for failed messages
