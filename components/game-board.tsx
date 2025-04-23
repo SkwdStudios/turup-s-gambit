@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card } from "@/components/card";
-import { TurnTimer } from "@/components/turn-timer";
 import { InGameEmotes } from "@/components/in-game-emotes";
 import { type Card as CardType, type Player } from "@/app/types/game";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -22,6 +21,23 @@ interface Emote {
   id: number;
   emoji: string;
   player: string;
+  timestamp: number;
+}
+
+interface PlayerInterface {
+  id: string;
+  name: string;
+  isHost?: boolean;
+  isBot?: boolean;
+  isReady?: boolean;
+  hand?: any[];
+  score?: number;
+}
+
+interface TrickResult {
+  winningPlayer: string;
+  winningTeam: "royals" | "rebels";
+  cards: CenterCard[];
   timestamp: number;
 }
 
@@ -51,8 +67,10 @@ export function GameBoard({
   onPlayCard,
   sendMessage,
 }: GameBoardProps) {
-  // We can still use the store for UI state
-  const { trumpSuit, scores, playCard: playCardAction } = useGameStore();
+  // Use primitive selectors instead of object selectors to prevent reference instability
+  const trumpSuit = useGameStore((state) => state.trumpSuit);
+  const scores = useGameStore((state) => state.scores);
+  const playCardAction = useGameStore((state) => state.playCard);
 
   const {
     selectedCard,
@@ -69,29 +87,70 @@ export function GameBoard({
 
   const [centerCards, setCenterCards] = useState<CenterCard[]>([]);
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
-  const [isTimerActive, setIsTimerActive] = useState(false);
   const [emotes, setEmotes] = useState<Emote[]>([]);
+  const [lastTrickResult, setLastTrickResult] = useState<TrickResult | null>(
+    null
+  );
+  const [showTrickWinnerMessage, setShowTrickWinnerMessage] = useState(false);
+  const [teamAssignments, setTeamAssignments] = useState<
+    Record<string, "royals" | "rebels">
+  >({});
 
-  // Use the provided onRecordMove function
-  const recordMove = (move: any) => {
-    console.log("[GameBoard] Recording move:", move);
-    onRecordMove(move);
-  };
+  // Add state for player hand to ensure it updates properly
+  const [playerHandCards, setPlayerHandCards] = useState<any[]>([]);
+  // Add a flag to track if we have a local hand already
+  const [handInitialized, setHandInitialized] = useState(false);
+  // Track processed trick IDs to prevent double-counting
+  const [processedTrickIds, setProcessedTrickIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Use playerHandCards directly
+  const playerHand = playerHandCards;
+
+  // Add refs to track player hand and current player index for bot logic
+  const playerHandRef = useRef<any[]>([]);
+  const centerCardsRef = useRef<any[]>([]);
+  const currentPlayerIndexRef = useRef<number>(0);
+  const gameStatusRef = useRef<string>("");
 
   // Get player hand from game state or use mock data if not available
-  const getPlayerHand = () => {
+  const getPlayerHand = useCallback(() => {
     if (gameState && user) {
       // Try to find the player in the game state
-      const player = gameState.players?.find((p) => p.id === user.id);
+      console.log("[GameBoard] Debug GameState:", gameState);
+      console.log(
+        `[GameBoard] Current game status: ${gameStatus}, initialCardsDeal: ${initialCardsDeal}`
+      );
+
+      const player = gameState.players?.find(
+        (p: PlayerInterface) => p.id === user.id
+      );
       if (player && player.hand && player.hand.length > 0) {
-        const cards = player.hand.map((card, index) => ({
+        console.log(
+          `[GameBoard] Player ${user.username} hand has ${player.hand.length} cards`
+        );
+
+        const cards = player.hand.map((card: any, index: number) => ({
           id: index,
           suit: card.suit,
           value: card.rank || card.value,
         }));
 
-        // Important: Only return the first 5 cards during initial deal
-        return initialCardsDeal ? cards.slice(0, 5) : cards;
+        // In playing state, always return all cards regardless of initialCardsDeal flag
+        if (gameStatus === "playing") {
+          console.log(
+            `[GameBoard] In playing state - returning all ${cards.length} cards`
+          );
+          return cards;
+        }
+
+        // For other states, respect the initialCardsDeal flag
+        const finalHand = initialCardsDeal ? cards.slice(0, 5) : cards;
+        console.log(
+          `[GameBoard] Returning ${finalHand.length} cards for display (initialCardsDeal: ${initialCardsDeal})`
+        );
+        return finalHand;
       }
     }
 
@@ -112,521 +171,1156 @@ export function GameBoard({
       { id: 13, suit: "hearts", value: "2" },
     ];
 
-    // Return only first 5 cards for initial deal
-    return initialCardsDeal ? mockHand.slice(0, 5) : mockHand;
+    // Return all 13 cards if in playing state, otherwise respect initialCardsDeal flag
+    return gameStatus === "playing"
+      ? mockHand
+      : initialCardsDeal
+      ? mockHand.slice(0, 5)
+      : mockHand;
+  }, [gameState, user, gameStatus, initialCardsDeal]);
+
+  // Memoize card click handler to prevent infinite rerenders
+  const handleCardClick = useCallback(
+    (cardId: number) => {
+      // Get a fresh reference to UIStore to avoid stale state
+      const { showToast } = useUIStore.getState();
+
+      // Check if we're in the playing phase
+      if (gameStatus !== "playing") {
+        console.log(`[GameBoard] Cannot play card in ${gameStatus} phase`);
+        showToast(
+          `Cannot play card yet. Current phase: ${gameStatus}`,
+          "warning"
+        );
+        return;
+      }
+
+      // Check if it's the player's turn
+      if (currentPlayerIndex !== 0) {
+        showToast("Not your turn to play", "warning");
+        return;
+      }
+
+      // Check if a card is already being played
+      if (cardPlayLoading) {
+        console.log("[GameBoard] Card already being played");
+        return;
+      }
+
+      setSelectedCard(cardId);
+      setPlayingCardId(cardId);
+      setCardPlayLoading(true);
+
+      // Find the card in player's hand
+      const card = playerHand.find((c: any) => c.id === cardId);
+      if (!card) {
+        console.error("[GameBoard] Card not found in player hand:", cardId);
+        setCardPlayLoading(false);
+        setPlayingCardId(null);
+        return;
+      }
+
+      // Convert the card to the proper format for the API
+      const apiCard = {
+        id: `${card.suit}-${card.value}`,
+        suit: card.suit as any,
+        rank: card.value as any,
+      };
+
+      console.log("[GameBoard] Playing card:", apiCard);
+
+      // First add the card to center immediately for better UX
+      const playerName = user?.username || "You";
+      const uiCard: CenterCard = {
+        id: cardId,
+        suit: card.suit,
+        value: card.value,
+        playedBy: playerName,
+      };
+
+      // Optimistically update UI (will be confirmed by the server event)
+      setCenterCards((prev) => {
+        if (prev.some((c) => c.playedBy === playerName)) {
+          return prev;
+        }
+        return [...prev, uiCard];
+      });
+
+      // Remove card from player's hand
+      setPlayerHandCards((prevHand) => prevHand.filter((c) => c.id !== cardId));
+
+      // Update the current player index optimistically
+      setCurrentPlayerIndex(1); // Move to next player
+
+      // Use the provided onPlayCard function
+      try {
+        onPlayCard(apiCard);
+      } catch (error) {
+        console.error("[GameBoard] Error playing card:", error);
+        // Revert the optimistic updates
+        setCenterCards((prev) => prev.filter((c) => c.playedBy !== playerName));
+
+        // Restore the card to the player's hand
+        setPlayerHandCards((prevHand) => [...prevHand, card]);
+
+        setCurrentPlayerIndex(0);
+        setCardPlayLoading(false);
+        setPlayingCardId(null);
+        showToast("Failed to play card. Please try again.", "error");
+      }
+    },
+    [
+      gameStatus,
+      currentPlayerIndex,
+      cardPlayLoading,
+      playerHand,
+      setSelectedCard,
+      setPlayingCardId,
+      setCardPlayLoading,
+      onPlayCard,
+      user,
+      setCenterCards,
+      setPlayerHandCards,
+    ]
+  );
+
+  // Update refs when their values change
+  useEffect(() => {
+    playerHandRef.current = playerHand;
+  }, [playerHand]);
+
+  useEffect(() => {
+    centerCardsRef.current = centerCards;
+  }, [centerCards]);
+
+  useEffect(() => {
+    currentPlayerIndexRef.current = currentPlayerIndex;
+  }, [currentPlayerIndex]);
+
+  useEffect(() => {
+    gameStatusRef.current = gameStatus;
+  }, [gameStatus]);
+
+  // Use the provided onRecordMove function
+  const recordMove = (move: any) => {
+    console.log("[GameBoard] Recording move:", move);
+    onRecordMove(move);
   };
 
-  // Get the player's hand
-  const playerHand = getPlayerHand();
-
-  // Start the timer when the game is in playing state
+  // Update the player hand when needed - but avoid resetting during trick completions
   useEffect(() => {
-    if (gameStatus === "playing") {
-      setIsTimerActive(true);
-      setCurrentPlayerIndex(0); // Start with the user's turn
+    // Only get the hand from gameState when not initialized or when game status changes
+    // This prevents resetting the hand when only scores are updated
+    if (!handInitialized || gameStatus !== "playing") {
+      const hand = getPlayerHand();
+      console.log(
+        `[GameBoard] Updated player hand from gameState, now has ${
+          hand?.length || 0
+        } cards`
+      );
+      setPlayerHandCards(hand || []);
+      setHandInitialized(true);
     } else {
-      setIsTimerActive(false);
+      console.log(
+        "[GameBoard] Preserving existing player hand during gameplay"
+      );
+    }
+  }, [gameState, gameStatus, initialCardsDeal, getPlayerHand, handInitialized]);
+
+  // Reset hand initialization when game status changes from playing to something else
+  useEffect(() => {
+    if (gameStatus !== "playing") {
+      setHandInitialized(false);
     }
   }, [gameStatus]);
 
-  // Handle timer expiration - play a random card
-  const handleTimeUp = () => {
-    if (currentPlayerIndex === 0 && gameStatus === "playing") {
-      // User's turn timed out, play a random card
-      const playableCards = playerHand.filter(
-        (card) => !centerCards.some((c) => c.id === card.id)
-      );
-      if (playableCards.length > 0) {
-        const randomIndex = Math.floor(Math.random() * playableCards.length);
-        const randomCard = playableCards[randomIndex];
-
-        // Instead of directly calling handleCardClick, which updates state,
-        // use setTimeout to ensure it happens after the current render cycle
-        setTimeout(() => {
-          handleCardClick(randomCard.id);
-        }, 0);
-      }
-    }
-  };
-
-  // Listen for card played events from the server
+  // Start the game with player 0 (user) when it enters playing state
   useEffect(() => {
-    if (gameStatus !== "playing") return;
+    if (gameStatus === "playing") {
+      setCurrentPlayerIndex(0); // Start with the user's turn
+    }
+  }, [gameStatus]);
 
-    const handleCardPlayed = (event: MessageEvent) => {
-      if (event.data && event.data.type === "game:card-played") {
-        console.log("[GameBoard] Received card played event:", event.data);
-        const { playerId, card } = event.data.payload;
+  // Assign players to teams on component mount
+  useEffect(() => {
+    // Simple team assignment - alternate between teams
+    // In a real implementation, this would come from the server
+    const teams: Record<string, "royals" | "rebels"> = {};
 
-        // Find the player who played the card
-        const playerObj = players.find((p) => p.id === playerId);
-        const playerName = playerObj ? playerObj.name : playerId;
+    players.forEach((player, index) => {
+      // Even indices (0, 2) are Royals, odd indices (1, 3) are Rebels
+      teams[player] = index % 2 === 0 ? "royals" : "rebels";
+    });
 
-        // Convert the card to the format expected by the UI
-        const uiCard: CenterCard = {
-          id:
-            typeof card.id === "string"
-              ? parseInt(card.id.split("-")[1])
-              : card.id,
-          suit: card.suit,
-          value: card.rank || card.value,
-          playedBy: playerName,
-        };
+    setTeamAssignments(teams);
+    console.log("[GameBoard] Assigned teams:", teams);
+  }, [players]);
 
-        // Add the card to the center if it's not already there
-        setCenterCards((prev) => {
-          // Check if this card is already in the center
-          if (prev.some((c) => c.playedBy === playerName)) {
-            return prev;
-          }
-          return [...prev, uiCard];
-        });
+  // Enhance the trick completion handler to show which team won
+  const handleTrickCompletion = useCallback(() => {
+    if (centerCards.length !== 4) return;
 
-        // Update the current player index
-        setCurrentPlayerIndex((prev) => (prev + 1) % 4);
+    // Generate a trick ID based on the cards to detect duplicates
+    const trickId = centerCards
+      .map((card) => `${card.suit}-${card.value}-${card.playedBy}`)
+      .sort()
+      .join("|");
 
-        // Record the move
-        recordMove({
-          type: "playCard",
-          player: playerName,
-          card: uiCard,
-        });
+    // Check if this exact trick has been processed already
+    if (processedTrickIds.has(trickId)) {
+      console.log(
+        "[GameBoard] Skipping duplicate trick completion for:",
+        trickId
+      );
+      return;
+    }
 
-        // Reset card play loading state
-        if (playerName === (user?.username || "")) {
-          setCardPlayLoading(false);
-          setPlayingCardId(null);
+    const currentCenterCards = [...centerCards];
+    console.log(
+      "[GameBoard] Determining trick winner for cards:",
+      currentCenterCards
+    );
+
+    // Proper trick winning logic implementation
+    // 1. Determine the lead suit (suit of the first card played)
+    const leadSuit = currentCenterCards[0].suit;
+    console.log(`[GameBoard] Lead suit is ${leadSuit}`);
+
+    // Card rank order (2 is lowest, Ace is highest)
+    const cardRanks: { [key: string]: number } = {
+      "2": 2,
+      "3": 3,
+      "4": 4,
+      "5": 5,
+      "6": 6,
+      "7": 7,
+      "8": 8,
+      "9": 9,
+      "10": 10,
+      J: 11,
+      Q: 12,
+      K: 13,
+      A: 14,
+    };
+
+    // Initial winning card is the first card
+    let winningCardIndex = 0;
+    let winningCard = currentCenterCards[0];
+
+    // Check each card in the trick
+    for (let i = 1; i < currentCenterCards.length; i++) {
+      const currentCard = currentCenterCards[i];
+
+      // Case 1: Current card is a trump and winning card is not
+      if (currentCard.suit === trumpSuit && winningCard.suit !== trumpSuit) {
+        winningCardIndex = i;
+        winningCard = currentCard;
+        console.log(
+          `[GameBoard] Card ${i} (${currentCard.value} of ${currentCard.suit}) beats current winner with trump`
+        );
+      }
+      // Case 2: Both cards are trump, compare ranks
+      else if (
+        currentCard.suit === trumpSuit &&
+        winningCard.suit === trumpSuit
+      ) {
+        if (cardRanks[currentCard.value] > cardRanks[winningCard.value]) {
+          winningCardIndex = i;
+          winningCard = currentCard;
+          console.log(
+            `[GameBoard] Card ${i} (${currentCard.value} of ${currentCard.suit}) beats current winner with higher trump`
+          );
         }
       }
-    };
-
-    // Add event listener for card played events
-    window.addEventListener("message", handleCardPlayed);
-
-    return () => {
-      window.removeEventListener("message", handleCardPlayed);
-    };
-  }, [gameStatus, players, user]);
-
-  // Clear center cards after all players have played
-  useEffect(() => {
-    if (centerCards.length === 4) {
-      setIsTimerActive(false);
-
-      const timer = setTimeout(() => {
-        // Determine winner of the trick
-        const winningPlayerName =
-          players.length > 0
-            ? players[Math.floor(Math.random() * Math.min(4, players.length))]
-                .name
-            : "";
-
-        // Record the trick result
-        recordMove({
-          type: "trickComplete",
-          winner: winningPlayerName,
-          cards: [...centerCards],
-        });
-
-        // Update scores using the provided function
-        const team = Math.random() > 0.5 ? "royals" : "rebels";
-        const newScores = {
-          ...scores,
-          [team]: scores[team] + 1,
-        };
-        onUpdateGameState({
-          scores: newScores,
-        });
-
-        setCenterCards([]);
-        setCurrentPlayerIndex(0); // Reset to user's turn
-        setIsTimerActive(true);
-      }, 1500);
-
-      return () => clearTimeout(timer);
-    }
-  }, [centerCards, players, scores, onUpdateGameState, recordMove]);
-
-  const handleCardClick = (cardId: number) => {
-    const { showToast } = useUIStore.getState();
-
-    // Check if we're in the playing phase
-    if (gameStatus !== "playing") {
-      console.log(`[GameBoard] Cannot play card in ${gameStatus} phase`);
-      showToast(
-        `Cannot play card yet. Current phase: ${gameStatus}`,
-        "warning"
-      );
-      return;
+      // Case 3: Current card follows lead suit and winning card is not a trump
+      else if (
+        currentCard.suit === leadSuit &&
+        winningCard.suit !== trumpSuit
+      ) {
+        if (
+          winningCard.suit !== leadSuit ||
+          cardRanks[currentCard.value] > cardRanks[winningCard.value]
+        ) {
+          winningCardIndex = i;
+          winningCard = currentCard;
+          console.log(
+            `[GameBoard] Card ${i} (${currentCard.value} of ${currentCard.suit}) beats current winner with higher lead suit card`
+          );
+        }
+      }
+      // All other cases: Current card cannot win (different suit, not trump)
     }
 
-    // Check if it's the player's turn
-    if (currentPlayerIndex !== 0) {
-      showToast("Not your turn to play", "warning");
-      return;
-    }
+    const winningPlayerName = winningCard.playedBy;
 
-    // Check if a card is already being played
-    if (cardPlayLoading) {
-      return;
-    }
+    // Determine which team won (based on player name)
+    const winningTeam = teamAssignments[winningPlayerName] || "royals";
 
-    setSelectedCard(cardId);
-    setPlayingCardId(cardId);
-    setCardPlayLoading(true);
+    console.log(
+      `[GameBoard] Trick won by ${winningPlayerName} (${winningTeam}) with ${winningCard.value} of ${winningCard.suit}`
+    );
 
-    // Find the card in player's hand
-    const card = playerHand.find((c) => c.id === cardId);
-    if (!card) {
-      setCardPlayLoading(false);
-      return;
-    }
-
-    // Convert the card to the proper format for the API
-    const apiCard = {
-      id: `${card.suit}-${card.value}`,
-      suit: card.suit as any,
-      rank: card.value as any,
-    };
-
-    console.log("[GameBoard] Playing card:", apiCard);
-
-    // Use the provided onPlayCard function
-    onPlayCard(apiCard);
-  };
-
-  const handleEmote = (emoji: string) => {
-    if (!user) return;
-
-    const newEmote: Emote = {
-      id: Date.now(),
-      emoji,
-      player: user.username,
+    // Create trick result
+    const trickResult: TrickResult = {
+      winningPlayer: winningPlayerName,
+      winningTeam: winningTeam,
+      cards: currentCenterCards,
       timestamp: Date.now(),
     };
 
-    setEmotes((prev) => [...prev, newEmote]);
+    // Set the last trick result to show in UI
+    setLastTrickResult(trickResult);
+    setShowTrickWinnerMessage(true);
 
-    // Send emote to other players
-    if (sendMessage) {
-      sendMessage({
-        type: "game:emote",
-        payload: {
-          roomId,
-          playerId: user.id,
-          emoji,
-        },
+    // Record the move
+    recordMove({
+      type: "trickComplete",
+      winner: winningPlayerName,
+      team: winningTeam,
+      cards: currentCenterCards,
+    });
+
+    // Update scores for the winning team with a non-destructive update
+    const newScores = {
+      ...scores,
+      [winningTeam]: (scores[winningTeam] || 0) + 1,
+    };
+
+    // Mark this trick as processed to prevent double counting
+    setProcessedTrickIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(trickId);
+      return newSet;
+    });
+
+    // Check if game has ended (a team has reached 7 tricks)
+    const gameEnded = newScores.royals >= 7 || newScores.rebels >= 7;
+
+    if (gameEnded) {
+      console.log(
+        `[GameBoard] Game ended! ${
+          newScores.royals >= 7 ? "Royals" : "Rebels"
+        } win with ${
+          newScores.royals >= 7 ? newScores.royals : newScores.rebels
+        } tricks`
+      );
+      // Use a targeted update to update scores and game status
+      onUpdateGameState({
+        scores: newScores,
+        gameStatus: "ended",
+        updateField: "game_end", // Signal that game has ended
+      });
+    } else {
+      // Use a targeted update that won't cause a full state refresh
+      onUpdateGameState({
+        scores: newScores,
+        updateField: "scores", // Signal field to indicate this is a targeted update
       });
     }
 
-    // Auto-remove emote after 3 seconds
+    // Show the trick winner message for 1 second
     setTimeout(() => {
-      setEmotes((prev) => prev.filter((e) => e.id !== newEmote.id));
-    }, 3000);
-  };
+      setShowTrickWinnerMessage(false);
 
-  // Handle playing a card
-  const handlePlayCard = (card: any) => {
-    console.log("[GameBoard] Playing card:", card);
+      // If game has ended, don't start a new round
+      if (!gameEnded) {
+        // Reset the center area and start the next round immediately
+        setCenterCards([]);
+        setCurrentPlayerIndex(0);
 
-    // Disable clicking if a card is already being played
-    if (cardPlayLoading || playingCardId) {
-      console.log("[GameBoard] Card play in progress, ignoring new card play");
+        // Reset card play loading states to allow new card plays
+        setCardPlayLoading(false);
+        setPlayingCardId(null);
+
+        console.log("[GameBoard] Ready for next trick - play states reset");
+      }
+    }, 1000);
+  }, [
+    centerCards,
+    scores,
+    recordMove,
+    onUpdateGameState,
+    teamAssignments,
+    trumpSuit,
+    processedTrickIds,
+  ]);
+
+  // Use the memoized handler in the effect
+  useEffect(() => {
+    if (centerCards.length === 4) {
+      const timer = setTimeout(() => {
+        handleTrickCompletion();
+      }, 500); // Reduced from 1500ms to 500ms for faster game play
+
+      return () => clearTimeout(timer);
+    }
+  }, [centerCards.length, handleTrickCompletion]);
+
+  // Memoize emote handler to prevent unnecessary rerenders
+  const handleEmote = useCallback(
+    (emoji: string) => {
+      if (!user) return;
+
+      const newEmote: Emote = {
+        id: Date.now(),
+        emoji,
+        player: user.username,
+        timestamp: Date.now(),
+      };
+
+      setEmotes((prev) => [...prev, newEmote]);
+
+      // Send emote to other players
+      if (sendMessage) {
+        sendMessage({
+          type: "game:emote",
+          payload: {
+            roomId,
+            playerId: user.id,
+            emoji,
+          },
+        });
+      }
+
+      // Auto-remove emote after 3 seconds
+      setTimeout(() => {
+        setEmotes((prev) => prev.filter((e) => e.id !== newEmote.id));
+      }, 3000);
+    },
+    [user, roomId, sendMessage, setEmotes]
+  );
+
+  // Memoize card playing function to prevent infinite loops
+  const handlePlayCard = useCallback(
+    (card: any) => {
+      console.log("[GameBoard] Playing card:", card);
+
+      // Disable clicking if a card is already being played
+      if (cardPlayLoading || playingCardId) {
+        console.log(
+          "[GameBoard] Card play in progress, ignoring new card play"
+        );
+        return;
+      }
+
+      // Set loading state to prevent clicking multiple cards
+      setCardPlayLoading(true);
+      setPlayingCardId(card.id);
+
+      // Create a UI card
+      const playerName = user?.username || "You";
+      const uiCard: CenterCard = {
+        id:
+          typeof card.id === "string"
+            ? parseInt(card.id.split("-")[1])
+            : card.id,
+        suit: card.suit,
+        value: card.rank || card.value,
+        playedBy: playerName,
+      };
+
+      // Optimistically update UI (will be confirmed by the server event)
+      setCenterCards((prev) => {
+        if (prev.some((c) => c.playedBy === playerName)) {
+          return prev;
+        }
+        return [...prev, uiCard];
+      });
+
+      // Update the current player index optimistically
+      setCurrentPlayerIndex(1); // Move to next player
+
+      // Delay to show animation
+      setTimeout(() => {
+        // Call the onPlayCard callback to actually play the card
+        if (onPlayCard) {
+          console.log("[GameBoard] Sending card play to game store:", card);
+          try {
+            onPlayCard(card);
+          } catch (error) {
+            console.error("[GameBoard] Error playing card:", error);
+            // Revert the optimistic updates
+            setCenterCards((prev) =>
+              prev.filter((c) => c.playedBy !== playerName)
+            );
+            setCurrentPlayerIndex(0);
+            setCardPlayLoading(false);
+            setPlayingCardId(null);
+
+            // Show error toast
+            const { showToast } = useUIStore.getState();
+            showToast("Failed to play card. Please try again.", "error");
+          }
+        } else {
+          console.error("[GameBoard] No onPlayCard handler provided");
+          // Reset state if no handler
+          setCardPlayLoading(false);
+          setPlayingCardId(null);
+        }
+      }, 500);
+    },
+    [
+      cardPlayLoading,
+      playingCardId,
+      setCardPlayLoading,
+      setPlayingCardId,
+      onPlayCard,
+      user,
+      setCenterCards,
+    ]
+  );
+
+  // Listen for force refresh events
+  useEffect(() => {
+    const handleRefreshState = (event: any) => {
+      console.log("[GameBoard] Received force refresh event:", event.detail);
+
+      // Force a re-evaluation of the player's hand
+      const refreshedHand = getPlayerHand();
+      console.log(
+        `[GameBoard] Refreshed hand has ${refreshedHand.length} cards`
+      );
+    };
+
+    window.addEventListener("game:refreshState", handleRefreshState);
+
+    return () => {
+      window.removeEventListener("game:refreshState", handleRefreshState);
+    };
+  }, [getPlayerHand]);
+
+  // Bot playing logic
+  useEffect(() => {
+    // Only run bot logic when game is in playing state and it's not the user's turn
+    if (gameStatus !== "playing" || currentPlayerIndex === 0) {
       return;
     }
 
-    // Set loading state to prevent clicking multiple cards
-    setCardPlayLoading(true);
-    setPlayingCardId(card.id);
+    // The bot currently playing is at index currentPlayerIndex
+    const currentBotIndex = currentPlayerIndex;
 
-    // Delay to show animation
-    setTimeout(() => {
-      // Call the onPlayCard callback to actually play the card
-      if (onPlayCard) {
-        console.log("[GameBoard] Sending card play to game store:", card);
-        onPlayCard(card);
-      } else {
-        console.error("[GameBoard] No onPlayCard handler provided");
-        // Reset state if no handler
-        setCardPlayLoading(false);
-        setPlayingCardId(null);
+    // Get the bot name from players array
+    const botName = players[currentBotIndex] || `Player ${currentBotIndex + 1}`;
+
+    console.log(`[GameBoard] Bot ${botName} is thinking...`);
+
+    // Delay to simulate thinking time (1-3 seconds)
+    const thinkingTime = 1000 + Math.random() * 2000;
+
+    const botPlayTimeout = setTimeout(() => {
+      // Generate a bot card play
+      makeBotCardPlay(currentBotIndex, botName);
+    }, thinkingTime);
+
+    return () => {
+      clearTimeout(botPlayTimeout);
+    };
+  }, [gameStatus, currentPlayerIndex, players]);
+
+  // Function to handle bot card play
+  const makeBotCardPlay = useCallback(
+    (botIndex: number, botName: string) => {
+      console.log(`[GameBoard] Bot ${botName} is playing a card`);
+
+      // Get a valid suit to play if there's a leading card
+      let leadSuit: string | null = null;
+      if (centerCards.length > 0) {
+        leadSuit = centerCards[0].suit;
       }
-    }, 500);
+
+      // Available suits and ranks for bot to use
+      const suits = ["hearts", "diamonds", "clubs", "spades"];
+      const ranks = [
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "J",
+        "Q",
+        "K",
+        "A",
+      ];
+
+      // Create a random card for the bot to play
+      // In a real game, this would use the bot's actual hand and follow game rules
+
+      // Randomly choose a suit, but respect the lead suit if possible
+      let selectedSuit = suits[Math.floor(Math.random() * suits.length)];
+
+      // If there's a trump suit in play, sometimes play it
+      if (trumpSuit && Math.random() > 0.7) {
+        selectedSuit = trumpSuit;
+      }
+      // If there's a lead suit, follow it most of the time
+      else if (leadSuit && Math.random() > 0.2) {
+        selectedSuit = leadSuit;
+      }
+
+      // Choose a random rank
+      const selectedRank = ranks[Math.floor(Math.random() * ranks.length)];
+
+      // Create card ID
+      const cardId = `${selectedSuit}-${selectedRank}`;
+
+      // Create the bot's card
+      const botCard = {
+        id: cardId,
+        suit: selectedSuit,
+        rank: selectedRank,
+      };
+
+      // Create UI card for display
+      const uiCard: CenterCard = {
+        id: Math.floor(Math.random() * 1000), // Random ID for UI
+        suit: selectedSuit,
+        value: selectedRank,
+        playedBy: botName,
+      };
+
+      // Add card to center
+      setCenterCards((prev) => {
+        // Check if this bot already has a card in the center
+        if (prev.some((c) => c.playedBy === botName)) {
+          return prev;
+        }
+        return [...prev, uiCard];
+      });
+
+      // Move to next player
+      setCurrentPlayerIndex((currentPlayerIndex + 1) % 4);
+
+      // Record the move
+      recordMove({
+        type: "playCard",
+        player: botName,
+        card: uiCard,
+      });
+
+      // Send message to server about the bot play if needed
+      if (sendMessage) {
+        try {
+          sendMessage({
+            type: "game:play-card",
+            payload: {
+              roomId,
+              playerId: `bot-${botIndex}`,
+              playerName: botName,
+              card: botCard,
+              gamePhase: gameStatus,
+              isBot: true,
+            },
+          });
+        } catch (error) {
+          console.error(
+            `[GameBoard] Error sending bot card play message:`,
+            error
+          );
+        }
+      }
+    },
+    [
+      centerCards,
+      currentPlayerIndex,
+      gameStatus,
+      recordMove,
+      roomId,
+      sendMessage,
+      trumpSuit,
+    ]
+  );
+
+  // Helper function to get team color classes
+  const getTeamColorClasses = (team: "royals" | "rebels") => {
+    return team === "royals" ? "text-amber-500" : "text-indigo-500";
+  };
+
+  // Helper function to get team icon
+  const getTeamIcon = (team: "royals" | "rebels") => {
+    return team === "royals" ? "👑" : "⚔️";
   };
 
   // Render the game board
   return (
-    <div className="relative w-full max-w-6xl mx-auto rounded-lg overflow-hidden">
-      {/* Game board container */}
-      <div className="relative aspect-[16/10] bg-gradient-to-b from-primary/5 to-primary/10 rounded-lg border border-primary/30 shadow-inner overflow-hidden">
-        <div className="absolute inset-0 bg-card-pattern opacity-20" />
-
-        {/* Top player */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center">
-          <div className="font-medieval text-sm md:text-base text-primary mb-1">
-            {players.length > 2 ? players[2]?.name || "Player 3" : "Player 3"}
-          </div>
-          <div className="flex gap-1 md:gap-2">
-            {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
-              <div
-                key={`top-card-${i}`}
-                className="w-3 md:w-4 h-10 md:h-14 bg-card rounded-md border border-primary/30 shadow-md transform rotate-180"
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Left player */}
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center">
-          <div className="font-medieval text-sm md:text-base text-primary mb-1">
-            {players.length > 1 ? players[1]?.name || "Player 2" : "Player 2"}
-          </div>
-          <div className="flex flex-col gap-1">
-            {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
-              <div
-                key={`left-card-${i}`}
-                className="h-3 md:h-4 w-10 md:w-14 bg-card rounded-md border border-primary/30 shadow-md transform -rotate-90"
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Right player */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center">
-          <div className="font-medieval text-sm md:text-base text-primary mb-1">
-            {players.length > 3 ? players[3]?.name || "Player 4" : "Player 4"}
-          </div>
-          <div className="flex flex-col gap-1">
-            {Array.from({ length: initialCardsDeal ? 5 : 13 }).map((_, i) => (
-              <div
-                key={`right-card-${i}`}
-                className="h-3 md:h-4 w-10 md:w-14 bg-card rounded-md border border-primary/30 shadow-md transform rotate-90"
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Current trick */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="grid grid-cols-2 gap-4 md:gap-8">
-            {centerCards.map((card, index) => (
-              <motion.div
-                key={`center-card-${card.id}-${index}`}
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{
-                  type: "spring",
-                  damping: 12,
-                  stiffness: 200,
-                }}
-                className="flex flex-col items-center"
-              >
-                <div className="text-xs md:text-sm text-muted-foreground mb-1">
-                  {card.playedBy}
-                </div>
-                <Card
-                  suit={card.suit}
-                  value={card.value}
-                  onClick={() => {}} // No action when clicking played cards
-                  disabled={true}
-                  is3D={true}
-                />
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        {/* Turn timer */}
-        {isTimerActive && (
-          <div className="absolute top-24 left-1/2 -translate-x-1/2">
-            <TurnTimer
-              duration={20}
-              onTimeUp={handleTimeUp}
-              isActive={isTimerActive}
-              currentPlayer={user?.username || "Your"}
-            />
-          </div>
-        )}
-
-        {/* Emotes */}
-        <AnimatePresence>
-          {emotes.map((emote) => (
-            <motion.div
-              key={emote.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-background/60 backdrop-blur-sm p-2 rounded-full shadow-lg"
-            >
-              <div className="text-4xl md:text-5xl">{emote.emoji}</div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-
-        {/* Bottom player (user) */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center">
-          {/* Game phase status for player */}
-          {gameStatus !== "playing" && (
-            <div className="mb-2 px-3 py-1 bg-card/80 backdrop-blur-sm rounded-lg border border-primary/30 shadow text-sm">
-              {gameStatus === "initial_deal" &&
-                "Waiting for initial deal to complete..."}
-              {gameStatus === "bidding" &&
-                "Trump selected. Waiting for final deal..."}
-              {gameStatus === "final_deal" && "Dealing remaining cards..."}
-              {gameStatus === "ended" && "Game has ended"}
+    <div className="relative w-full max-w-6xl mx-auto flex flex-col gap-4">
+      {/* Game Summary Screen - Show when game has ended */}
+      {gameStatus === "ended" ? (
+        <div className="bg-gradient-to-b from-primary/10 to-primary/20 rounded-lg border border-primary/30 shadow-lg p-8 flex flex-col items-center">
+          <div className="mb-8 text-center">
+            <h2 className="text-3xl font-medieval mb-2">Game Over!</h2>
+            <div className="text-xl">
+              {scores.royals >= 7 ? (
+                <span className="text-amber-500 font-bold flex items-center justify-center gap-2">
+                  <span className="text-2xl">👑</span> Royals Win!{" "}
+                  <span className="text-2xl">👑</span>
+                </span>
+              ) : (
+                <span className="text-indigo-500 font-bold flex items-center justify-center gap-2">
+                  <span className="text-2xl">⚔️</span> Rebels Win!{" "}
+                  <span className="text-2xl">⚔️</span>
+                </span>
+              )}
             </div>
-          )}
-          {gameStatus === "playing" && currentPlayerIndex !== 0 && (
-            <div className="mb-2 px-3 py-1 bg-card/80 backdrop-blur-sm rounded-lg border border-primary/30 shadow text-sm">
-              Waiting for your turn...
-            </div>
-          )}
-          {gameStatus === "playing" && currentPlayerIndex === 0 && (
-            <div className="mb-2 px-3 py-1 bg-green-800/80 backdrop-blur-sm rounded-lg border border-green-500/50 shadow text-sm animate-pulse">
-              Your turn to play!
-            </div>
-          )}
+          </div>
 
-          <div className="flex justify-center gap-1 md:gap-2 mb-2">
-            {playerHand.map((card) => (
-              <motion.div
-                key={`player-card-${card.id}`}
-                whileHover={{
-                  y: gameStatus === "playing" ? -10 : 0,
-                  transition: { duration: 0.2 },
-                }}
-                onClick={() => handleCardClick(card.id)}
-                className={`cursor-pointer ${
-                  selectedCard === card.id ? "transform -translate-y-4" : ""
-                } ${
-                  playingCardId === card.id
-                    ? "opacity-50 cursor-not-allowed"
-                    : ""
-                } ${
-                  gameStatus !== "playing"
-                    ? "opacity-70 filter grayscale-[30%] cursor-not-allowed"
-                    : ""
+          <div className="bg-card/80 backdrop-blur-sm p-6 rounded-lg border border-primary/30 shadow-lg mb-8 w-full max-w-md">
+            <h3 className="text-xl font-semibold mb-4 text-center">
+              Final Score
+            </h3>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div
+                className={`p-4 rounded-lg ${
+                  scores.royals >= 7
+                    ? "bg-amber-900/40 border border-amber-500/50"
+                    : "bg-card/50"
                 }`}
               >
-                <Card
-                  suit={card.suit}
-                  value={card.value}
-                  onClick={() => handleCardClick(card.id)}
-                  disabled={
-                    playingCardId === card.id || gameStatus !== "playing"
-                  }
-                  is3D={true}
-                />
-                {playingCardId === card.id && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <LoadingSpinner size="sm" />
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
-          <div className="font-medieval text-primary">
-            {user?.username || "Player 1"}
-          </div>
-
-          {/* Emote controls */}
-          <InGameEmotes onEmote={handleEmote} />
-        </div>
-
-        {/* Trump suit indicator or game phase indicator */}
-        {trumpSuit ? (
-          <div className="absolute top-4 right-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow flex items-center gap-2">
-            <span className="text-sm text-foreground">Trump:</span>
-            <span className="text-2xl">
-              {trumpSuit === "hearts"
-                ? "♥️"
-                : trumpSuit === "diamonds"
-                ? "♦️"
-                : trumpSuit === "clubs"
-                ? "♣️"
-                : "♠️"}
-            </span>
-          </div>
-        ) : (
-          gameStatus === "initial_deal" && (
-            <div className="absolute top-4 right-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow">
-              <div className="text-sm font-medieval text-foreground">
-                Initial 5 cards dealt
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <span className="text-2xl">👑</span>
+                  <span className="text-lg font-medium">Royals</span>
+                </div>
+                <div className="text-4xl font-bold text-center">
+                  {scores.royals}
+                </div>
               </div>
-              <button
-                onClick={() => setShowTrumpPopup(true)}
-                className="mt-2 w-full bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg shadow-lg border border-primary/30 font-medieval animate-pulse"
+
+              <div
+                className={`p-4 rounded-lg ${
+                  scores.rebels >= 7
+                    ? "bg-indigo-900/40 border border-indigo-500/50"
+                    : "bg-card/50"
+                }`}
               >
-                Select Trump Suit
-              </button>
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <span className="text-2xl">⚔️</span>
+                  <span className="text-lg font-medium">Rebels</span>
+                </div>
+                <div className="text-4xl font-bold text-center">
+                  {scores.rebels}
+                </div>
+              </div>
             </div>
-          )
-        )}
 
-        {/* Game Phase Indicator */}
-        <div className="absolute top-4 left-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow mb-2">
-          <div className="text-xs font-semibold">Game Phase</div>
-          <div className="text-sm flex items-center gap-2">
-            {gameStatus === "initial_deal" && (
-              <>
-                <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
-                <span>Initial Deal (5 cards)</span>
-              </>
-            )}
-            {gameStatus === "bidding" && (
-              <>
-                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                <span>Trump Selected</span>
-              </>
-            )}
-            {gameStatus === "final_deal" && (
-              <>
-                <span className="inline-block w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                <span>Final Deal (8 more cards)</span>
-              </>
-            )}
-            {gameStatus === "playing" && (
-              <>
-                <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                <span>Playing</span>
-              </>
-            )}
-            {gameStatus === "ended" && (
-              <>
-                <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
-                <span>Game Over</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Scores */}
-        <div className="absolute top-20 left-4 bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow">
-          <div className="text-xs font-semibold">Score</div>
-          <div className="flex gap-3 text-sm">
-            <div>
-              Royals: <span className="font-bold">{scores.royals}</span>
-            </div>
-            <div>
-              Rebels: <span className="font-bold">{scores.rebels}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Loading overlay */}
-        {(cardPlayLoading || gameStatus === "final_deal") && (
-          <div className="absolute inset-0 bg-background/30 backdrop-blur-sm flex items-center justify-center">
-            <div className="bg-card/90 p-4 rounded-lg shadow-lg flex flex-col items-center">
-              <LoadingSpinner size="lg" />
-              <div className="mt-2 text-foreground">
-                {cardPlayLoading && "Playing card..."}
-                {gameStatus === "final_deal" && "Dealing remaining 8 cards..."}
+            <div className="mt-6">
+              <h4 className="text-md font-medium mb-2 text-center">
+                Team Members
+              </h4>
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <ul className="space-y-1">
+                    {players
+                      .filter((player) => teamAssignments[player] === "royals")
+                      .map((player) => (
+                        <li key={player} className="text-amber-400">
+                          {player}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+                <div>
+                  <ul className="space-y-1">
+                    {players
+                      .filter((player) => teamAssignments[player] === "rebels")
+                      .map((player) => (
+                        <li key={player} className="text-indigo-400">
+                          {player}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
-        )}
-      </div>
+
+          <div className="flex gap-4">
+            <button
+              onClick={() => (window.location.href = "/lobby")}
+              className="px-6 py-3 bg-primary hover:bg-primary/80 text-primary-foreground rounded-lg shadow transition-colors"
+            >
+              Return to Lobby
+            </button>
+          </div>
+
+          <div className="mt-8 text-center text-muted-foreground text-sm">
+            <p>Thanks for playing Turup's Gambit!</p>
+            <p className="mt-1">A team wins by securing 7 out of 13 tricks.</p>
+          </div>
+        </div>
+      ) : (
+        /* Rest of the original game board UI for active game */
+        <>
+          {/* First Box: Game Information */}
+          <div className="relative bg-gradient-to-b from-primary/5 to-primary/10 rounded-lg border border-primary/30 shadow-inner p-4">
+            <div className="absolute inset-0 bg-card-pattern opacity-20" />
+
+            <div className="flex justify-between items-start">
+              {/* Game Phase */}
+              <div className="bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow">
+                <div className="text-xs font-semibold">Game Phase</div>
+                <div className="text-sm flex items-center gap-2">
+                  {gameStatus === "playing" && (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                      <span>Playing</span>
+                    </>
+                  )}
+                  {gameStatus !== "playing" && (
+                    <>
+                      <span className="inline-block w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                      <span>
+                        {gameStatus.charAt(0).toUpperCase() +
+                          gameStatus.slice(1).replace("_", " ")}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Team Scores */}
+              <div className="bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow">
+                <div className="text-xs font-semibold mb-1">Team Scores</div>
+                <div className="flex flex-col gap-1 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="text-amber-500 mr-1">👑</span> Royals:
+                    </div>
+                    <span className="font-bold">{scores.royals}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="text-indigo-500 mr-1">⚔️</span> Rebels:
+                    </div>
+                    <span className="font-bold">{scores.rebels}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Trump suit indicator */}
+              <div className="bg-card/80 backdrop-blur-sm p-2 rounded-lg border border-primary/30 shadow flex items-center gap-2">
+                <span className="text-sm text-foreground">Trump:</span>
+                <span className="text-2xl">
+                  {trumpSuit === "hearts"
+                    ? "♥️"
+                    : trumpSuit === "diamonds"
+                    ? "♦️"
+                    : trumpSuit === "clubs"
+                    ? "♣️"
+                    : trumpSuit === "spades"
+                    ? "♠️"
+                    : "?"}
+                </span>
+              </div>
+            </div>
+
+            {/* Turn indicator */}
+            <div className="mt-4 flex flex-col items-center">
+              <div className="text-sm font-medium mb-1">
+                {currentPlayerIndex === 0
+                  ? `${user?.username}'s Turn`
+                  : `${
+                      players[currentPlayerIndex] ||
+                      `Player ${currentPlayerIndex + 1}`
+                    }'s Turn`}
+              </div>
+            </div>
+          </div>
+
+          {/* Second Box: Card Play Area */}
+          <div className="relative aspect-[16/10] bg-gradient-to-b from-primary/5 to-primary/10 rounded-lg border border-primary/30 shadow-inner overflow-hidden">
+            <div className="absolute inset-0 bg-card-pattern opacity-20" />
+
+            {/* Top player */}
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 flex flex-col items-center">
+              <div className="flex flex-col items-center mb-1">
+                <div className="flex items-center">
+                  <div className="font-medieval text-primary">
+                    {players.length > 2 ? players[2] || "Player 3" : "Player 3"}
+                  </div>
+                  {/* Team indicator */}
+                  {teamAssignments[players[2]] && (
+                    <span
+                      className={`ml-1 ${getTeamColorClasses(
+                        teamAssignments[players[2]]
+                      )}`}
+                    >
+                      {getTeamIcon(teamAssignments[players[2]])}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Vertical cards display */}
+              <div className="flex space-x-1">
+                {Array.from({
+                  length:
+                    gameStatus === "playing" ? 13 : initialCardsDeal ? 5 : 13,
+                }).map((_, i) => (
+                  <div
+                    key={`top-card-${i}`}
+                    className="w-4 h-20 bg-card rounded-sm border border-primary/30 shadow-md"
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Left player */}
+            <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col items-center">
+              <div className="flex flex-col items-center mb-1">
+                <div className="flex items-center">
+                  <div className="font-medieval text-primary">
+                    {players.length > 1 ? players[1] || "Player 2" : "Player 2"}
+                  </div>
+                  {/* Team indicator */}
+                  {teamAssignments[players[1]] && (
+                    <span
+                      className={`ml-1 ${getTeamColorClasses(
+                        teamAssignments[players[1]]
+                      )}`}
+                    >
+                      {getTeamIcon(teamAssignments[players[1]])}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Vertical cards display */}
+              <div className="flex flex-col space-y-1">
+                {Array.from({
+                  length:
+                    gameStatus === "playing" ? 13 : initialCardsDeal ? 5 : 13,
+                }).map((_, i) => (
+                  <div
+                    key={`left-card-${i}`}
+                    className="w-20 h-4 bg-card rounded-sm border border-primary/30 shadow-md"
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Right player */}
+            <div className="absolute right-8 top-1/2 -translate-y-1/2 flex flex-col items-center">
+              <div className="flex flex-col items-center mb-1">
+                <div className="flex items-center">
+                  <div className="font-medieval text-primary">
+                    {players.length > 3 ? players[3] || "Player 4" : "Player 4"}
+                  </div>
+                  {/* Team indicator */}
+                  {teamAssignments[players[3]] && (
+                    <span
+                      className={`ml-1 ${getTeamColorClasses(
+                        teamAssignments[players[3]]
+                      )}`}
+                    >
+                      {getTeamIcon(teamAssignments[players[3]])}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Vertical cards display */}
+              <div className="flex flex-col space-y-1">
+                {Array.from({
+                  length:
+                    gameStatus === "playing" ? 13 : initialCardsDeal ? 5 : 13,
+                }).map((_, i) => (
+                  <div
+                    key={`right-card-${i}`}
+                    className="w-20 h-4 bg-card rounded-sm border border-primary/30 shadow-md"
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* Current trick - center cards */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="grid grid-cols-2 gap-4 md:gap-8">
+                {centerCards.map((card, index) => (
+                  <motion.div
+                    key={`center-card-${card.id}-${index}`}
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{
+                      type: "spring",
+                      damping: 12,
+                      stiffness: 200,
+                    }}
+                    className="flex flex-col items-center"
+                  >
+                    <div className="flex flex-col items-center">
+                      <div className="text-xs md:text-sm text-muted-foreground mb-1">
+                        {card.playedBy}
+                      </div>
+                      {/* Team indicator */}
+                      {teamAssignments[card.playedBy] && (
+                        <div
+                          className={`text-xs ${getTeamColorClasses(
+                            teamAssignments[card.playedBy]
+                          )} mb-1`}
+                        >
+                          {getTeamIcon(teamAssignments[card.playedBy])}
+                        </div>
+                      )}
+                    </div>
+                    <Card
+                      suit={card.suit}
+                      value={card.value}
+                      onClick={() => {}} // No action when clicking played cards
+                      disabled={true}
+                      is3D={true}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+
+            {/* Trick Winner Message */}
+            <AnimatePresence>
+              {showTrickWinnerMessage && lastTrickResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2
+                              ${
+                                lastTrickResult.winningTeam === "royals"
+                                  ? "bg-amber-900/90 border-amber-500"
+                                  : "bg-indigo-900/90 border-indigo-500"
+                              }
+                              backdrop-blur-sm p-3 px-6 rounded-lg border-2 shadow-lg z-30`}
+                >
+                  <div className="text-center">
+                    <div className="text-xl font-bold mb-1">
+                      {lastTrickResult.winningTeam === "royals"
+                        ? "👑 Royals Win! 👑"
+                        : "⚔️ Rebels Win! ⚔️"}
+                    </div>
+                    <div className="text-sm">
+                      {lastTrickResult.winningPlayer} won the trick
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Emotes */}
+            <AnimatePresence>
+              {emotes.map((emote) => (
+                <motion.div
+                  key={emote.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-background/60 backdrop-blur-sm p-2 rounded-full shadow-lg"
+                >
+                  <div className="text-4xl md:text-5xl">{emote.emoji}</div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+
+            {/* Bottom player (user) */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center">
+              {/* Game status message or turn indicator */}
+              {gameStatus !== "playing" && (
+                <div className="mb-2 px-3 py-1 bg-card/80 backdrop-blur-sm rounded-lg border border-primary/30 shadow text-sm">
+                  {gameStatus === "initial_deal" &&
+                    "Waiting for initial deal to complete..."}
+                  {gameStatus === "bidding" &&
+                    "Trump selected. Waiting for final deal..."}
+                  {gameStatus === "final_deal" && "Dealing remaining cards..."}
+                </div>
+              )}
+              {gameStatus === "playing" && currentPlayerIndex !== 0 && (
+                <div className="mb-2 px-3 py-1 bg-card/80 backdrop-blur-sm rounded-lg border border-primary/30 shadow text-sm">
+                  Waiting for your turn...
+                </div>
+              )}
+              {gameStatus === "playing" && currentPlayerIndex === 0 && (
+                <div className="mb-2 px-4 py-2 bg-green-800/80 backdrop-blur-sm rounded-lg border border-green-500/50 shadow text-sm animate-pulse">
+                  Your turn to play!
+                </div>
+              )}
+
+              {/* Player hand cards */}
+              <div className="flex justify-center gap-1 md:gap-2 mb-2">
+                {playerHand.map((card: any) => (
+                  <motion.div
+                    key={`player-card-${card.id}`}
+                    whileHover={{
+                      y: gameStatus === "playing" ? -10 : 0,
+                      transition: { duration: 0.2 },
+                    }}
+                    onClick={() => handleCardClick(card.id)}
+                    className={`cursor-pointer ${
+                      selectedCard === card.id ? "transform -translate-y-4" : ""
+                    } ${
+                      playingCardId === card.id
+                        ? "opacity-50 cursor-not-allowed"
+                        : ""
+                    } ${
+                      gameStatus !== "playing"
+                        ? "opacity-70 filter grayscale-[30%] cursor-not-allowed"
+                        : ""
+                    }`}
+                  >
+                    <Card
+                      suit={card.suit}
+                      value={card.value}
+                      onClick={() => handleCardClick(card.id)}
+                      disabled={
+                        playingCardId === card.id || gameStatus !== "playing"
+                      }
+                      is3D={true}
+                    />
+                    {playingCardId === card.id && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <LoadingSpinner size="sm" />
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Player name and team */}
+              <div className="flex flex-col items-center">
+                <div className="flex items-center">
+                  <div className="font-medieval text-primary">
+                    {user?.username || "Player 1"}
+                  </div>
+                  {/* Team badge for user */}
+                  {user && teamAssignments[user.username] && (
+                    <span
+                      className={`ml-1 ${getTeamColorClasses(
+                        teamAssignments[user.username]
+                      )}`}
+                    >
+                      {getTeamIcon(teamAssignments[user.username])}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Emote controls */}
+              <InGameEmotes onEmote={handleEmote} />
+            </div>
+
+            {/* Loading overlay */}
+            {gameStatus === "final_deal" && (
+              <div className="absolute inset-0 bg-background/30 backdrop-blur-sm flex items-center justify-center">
+                <div className="bg-card/90 p-4 rounded-lg shadow-lg flex flex-col items-center">
+                  <LoadingSpinner size="lg" />
+                  <div className="mt-2 text-foreground">
+                    {gameStatus === "final_deal" &&
+                      "Dealing remaining 8 cards..."}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -156,25 +156,29 @@ export type GameStatus =
   | "playing"
   | "ended";
 
-interface GameStoreState {
-  // Game state
+export interface GameStoreState {
+  // Room and players data
+  roomId: string | null;
   currentRoom: GameRoom | null;
   players: Player[];
-  gameMode: GameMode;
-  gameStatus: GameStatus;
   isLoading: boolean;
   isConnected: boolean;
-  roomId: string | null;
 
-  // Gameplay state
+  // Game configuration
+  gameMode: GameMode;
+
+  // Core game state
+  gameStatus: GameStatus;
   trumpSuit: Suit | null;
   currentTrick: Card[];
   scores: { royals: number; rebels: number };
   currentPlayer: string;
-  specialPowers?: Record<string, boolean>;
-  remainingDeck?: Card[]; // Remaining cards for final deal
 
-  // UI state flags for game flow
+  // Additional game state
+  specialPowers?: Record<string, boolean>;
+  remainingDeck?: Card[];
+
+  // UI state flags
   showShuffleAnimation: boolean;
   initialCardsDeal: boolean;
   statusMessage: string | null;
@@ -228,13 +232,13 @@ export const useGameStore = create<GameStoreState>()(
     persist(
       (set, get) => ({
         // Default state
+        roomId: null,
         currentRoom: null,
         players: [],
         gameMode: "classic",
         gameStatus: "waiting",
         isLoading: true,
         isConnected: false,
-        roomId: null,
 
         trumpSuit: null,
         currentTrick: [],
@@ -273,6 +277,21 @@ export const useGameStore = create<GameStoreState>()(
         setGameStatus: (gameStatus) => {
           console.log(`[GameStore] Setting game status to ${gameStatus}`);
           set({ gameStatus });
+
+          // Also update the gameState in currentRoom to keep it in sync
+          const currentRoom = get().currentRoom;
+          if (currentRoom && currentRoom.gameState) {
+            set({
+              currentRoom: {
+                ...currentRoom,
+                gameState: {
+                  ...currentRoom.gameState,
+                  gamePhase: gameStatus,
+                },
+              },
+            });
+          }
+
           console.log("[GameStore] Game status set to:", get().gameStatus);
         },
 
@@ -423,156 +442,43 @@ export const useGameStore = create<GameStoreState>()(
         },
 
         startGame: async () => {
-          const { roomId, currentRoom, players } = get();
-          const user = useAuthStore.getState().user;
-          const { showToast } = useUIStore.getState();
+          const { currentRoom, players } = get();
 
-          if (!roomId || !currentRoom) {
-            console.error("[GameStore] Cannot start game, no active room");
-            showToast("Cannot start game: No active room", "error");
+          if (!currentRoom) {
+            console.error("[GameStore] No active room, cannot start game");
             return;
           }
 
-          if (!user || !user.id) {
-            console.error(
-              "[GameStore] Cannot start game, user not authenticated"
-            );
-            showToast("Cannot start game: Please log in first", "error");
-            return;
-          }
-
-          // Check if user is the host
-          const isHost = currentRoom.players.some(
-            (player) => player.id === user.id && player.isHost
-          );
-
-          if (!isHost) {
-            console.error("[GameStore] Only the host can start the game");
-            showToast("Only the host can start the game", "error");
-            return;
-          }
-
-          // Check if there are enough players
+          // Validation: Make sure we have enough players
           if (players.length < 4) {
             console.error(
-              `[GameStore] Not enough players to start game (${players.length}/4)`
-            );
-            showToast(
-              `Not enough players to start game (${players.length}/4). Need 4 players.`,
-              "error"
+              `[GameStore] Not enough players to start (${players.length}/4)`
             );
             return;
           }
 
+          console.log("[GameStore] Starting game...");
+
+          // Set the game status to initial deal and enable shuffle animation
+          set({
+            gameStatus: "initial_deal",
+            initialCardsDeal: true, // Explicitly set initialCardsDeal to true
+            showShuffleAnimation: true,
+          });
+
           console.log(
-            `[GameStore] Starting game in room ${roomId} with mode ${
-              get().gameMode
-            }`
+            "[GameStore] Game status set to initial_deal, initialCardsDeal=true"
           );
 
-          try {
-            // Send start game message
-            const messageResult = await get().sendMessage({
-              type: "game:start",
-              payload: {
-                roomId: roomId, // Make sure roomId is included in the payload
-                gameMode: get().gameMode,
-                playerId: user.id,
-                playerName: user.username || "Player",
-              },
-            });
-
-            if (!messageResult) {
-              console.error("[GameStore] Failed to send start game message");
-              showToast("Failed to start game. Please try again.", "error");
-              return;
-            }
-
-            // Update local state
-            set({
-              gameStatus: "initial_deal",
-              showShuffleAnimation: true,
+          // Ensure all players have the same gameState, using a real-time message
+          get().sendMessage({
+            type: "game:start",
+            payload: {
+              roomId: currentRoom.id,
+              gamePhase: "initial_deal",
               initialCardsDeal: true,
-              statusMessage: "Game starting... Dealing initial cards",
-            });
-
-            showToast("Game starting! Dealing initial cards...", "success");
-
-            // Deal initial cards to players
-            const deck = createDeck();
-            const shuffledDeck = shuffleDeck(deck);
-            console.log("[GameStore] Created and shuffled deck:", {
-              deckSize: shuffledDeck.length,
-            });
-
-            // For the initial deal, each player gets 5 cards
-            const initialHands: Record<string, Card[]> = {};
-
-            // Get all players including the current user
-            const allPlayers = get().players;
-            console.log(
-              "[GameStore] Players before dealing:",
-              allPlayers.map((p) => ({ id: p.id, name: p.name }))
-            );
-
-            // Deal 5 cards to each player
-            allPlayers.forEach((player, playerIndex) => {
-              initialHands[player.id] = shuffledDeck.slice(
-                playerIndex * 5,
-                (playerIndex + 1) * 5
-              );
-              console.log(
-                `[GameStore] Dealt 5 cards to ${player.name} (ID: ${player.id})`
-              );
-            });
-
-            // Update players with their initial hands
-            set((state) => {
-              const updatedPlayers = state.players.map((player) => {
-                const playerHand = initialHands[player.id] || [];
-                console.log(
-                  `[GameStore] Updating ${player.name} (ID: ${player.id}) with ${playerHand.length} cards`
-                );
-                return {
-                  ...player,
-                  hand: playerHand,
-                };
-              });
-
-              return {
-                players: updatedPlayers,
-              };
-            });
-
-            // Set remaining deck for final deal after trump selection
-            set({ remainingDeck: shuffledDeck.slice(allPlayers.length * 5) });
-
-            console.log("[GameStore] Initial cards dealt to players");
-
-            // Show the trump selection popup after a longer delay to ensure state is updated
-            setTimeout(() => {
-              set({
-                showShuffleAnimation: false,
-                statusMessage: "Initial 5 cards dealt. Select trump suit.",
-              });
-
-              // Log the current players state before showing popup
-              console.log(
-                "[GameStore] Player hands before showing popup:",
-                get().players.map((p) => ({
-                  id: p.id,
-                  name: p.name,
-                  handLength: p.hand?.length || 0,
-                }))
-              );
-
-              // Show trump selection popup
-              useUIStore.getState().setShowTrumpPopup(true);
-            }, 3000); // Increase from 2000 to 3000 ms
-          } catch (error) {
-            console.error("[GameStore] Error starting game:", error);
-            showToast("Error starting game. Please try again.", "error");
-          }
+            },
+          });
         },
 
         // Add bots to fill the room
@@ -721,7 +627,10 @@ export const useGameStore = create<GameStoreState>()(
             currentTrick,
           } = get();
           const user = useAuthStore.getState().user;
-          const { showToast } = useUIStore.getState();
+
+          // Extract UI methods before any state changes
+          const uiStore = useUIStore.getState();
+          const { showToast, setCardPlayLoading, setPlayingCardId } = uiStore;
 
           if (!roomId || !currentRoom || !user) {
             console.error("[GameStore] Cannot play card, no active room");
@@ -786,13 +695,13 @@ export const useGameStore = create<GameStoreState>()(
           }
 
           // Set loading state while card is being played
-          useUIStore.getState().setCardPlayLoading(true);
+          setCardPlayLoading(true);
           // Convert card ID to a number if needed for the UI store
           const numericCardId =
             typeof card.id === "string"
               ? parseInt(card.id.replace(/\D/g, ""), 10) || 0
               : 0;
-          useUIStore.getState().setPlayingCardId(numericCardId);
+          setPlayingCardId(numericCardId);
 
           // Send play card message to the server
           get().sendMessage({
@@ -806,8 +715,23 @@ export const useGameStore = create<GameStoreState>()(
             },
           });
 
-          // Local state updates will be handled by the message handler
-          // to ensure consistent state updates for all clients
+          // Also update the local state to reflect the played card
+          const updatedTrick = [...currentTrick, card];
+          set({ currentTrick: updatedTrick });
+
+          // Update player's hand
+          set((state) => ({
+            players: state.players.map((p) => {
+              if (p.id === user.id) {
+                // Remove the played card from the player's hand
+                return {
+                  ...p,
+                  hand: p.hand.filter((c) => c.id !== card.id),
+                };
+              }
+              return p;
+            }),
+          }));
         },
 
         placeBid: (bid) => {
@@ -864,7 +788,7 @@ export const useGameStore = create<GameStoreState>()(
         // Game state update helpers
         updateGameState: (newState) => {
           set((state) => {
-            // First update the currentRoom.gameState if it exists
+            // Create an updated room with the new game state
             const updatedRoom = state.currentRoom
               ? {
                   ...state.currentRoom,
@@ -875,17 +799,30 @@ export const useGameStore = create<GameStoreState>()(
                 }
               : null;
 
-            // Then update the individual state fields
-            return {
+            // Update all the relevant direct state properties
+            // to keep the state synchronized
+            const updatedState: Partial<GameStoreState> = {
               currentRoom: updatedRoom,
-              ...(newState.trumpSuit !== undefined && {
-                trumpSuit: newState.trumpSuit,
-              }),
-              ...(newState.gamePhase !== undefined && {
-                gameStatus: newState.gamePhase as GameStatus,
-              }),
-              ...(newState.scores !== undefined && { scores: newState.scores }),
             };
+
+            // Map fields from newState to the top-level state
+            if (newState.trumpSuit !== undefined) {
+              updatedState.trumpSuit = newState.trumpSuit;
+            }
+
+            if (newState.gamePhase !== undefined) {
+              updatedState.gameStatus = newState.gamePhase as GameStatus;
+            }
+
+            if (newState.scores !== undefined) {
+              updatedState.scores = newState.scores;
+            }
+
+            if (newState.currentTurn !== undefined) {
+              updatedState.currentPlayer = newState.currentTurn;
+            }
+
+            return updatedState;
           });
         },
 
@@ -893,13 +830,77 @@ export const useGameStore = create<GameStoreState>()(
 
         setIsAddingBots: (isAddingBots) => set({ isAddingBots }),
 
-        setTrumpSuit: (trumpSuit) => set({ trumpSuit }),
+        setTrumpSuit: (trumpSuit) => {
+          set({ trumpSuit });
 
-        setCurrentTrick: (currentTrick) => set({ currentTrick }),
+          // Also update in the room gameState
+          const currentRoom = get().currentRoom;
+          if (currentRoom) {
+            set({
+              currentRoom: {
+                ...currentRoom,
+                gameState: {
+                  ...currentRoom.gameState,
+                  trumpSuit,
+                },
+              },
+            });
+          }
+        },
 
-        setCurrentPlayer: (currentPlayer) => set({ currentPlayer }),
+        setCurrentTrick: (currentTrick) => {
+          set({ currentTrick });
 
-        updateScores: (newScores) => set({ scores: newScores }),
+          // Also update in the room gameState
+          const currentRoom = get().currentRoom;
+          if (currentRoom) {
+            set({
+              currentRoom: {
+                ...currentRoom,
+                gameState: {
+                  ...currentRoom.gameState,
+                  trickCards: currentTrick,
+                },
+              },
+            });
+          }
+        },
+
+        setCurrentPlayer: (currentPlayer) => {
+          set({ currentPlayer });
+
+          // Also update in the room gameState
+          const currentRoom = get().currentRoom;
+          if (currentRoom) {
+            set({
+              currentRoom: {
+                ...currentRoom,
+                gameState: {
+                  ...currentRoom.gameState,
+                  currentTurn: currentPlayer,
+                },
+              },
+            });
+          }
+        },
+
+        updateScores: (scores) => {
+          set({ scores });
+
+          // Also update in the room gameState
+          const currentRoom = get().currentRoom;
+          if (currentRoom) {
+            set({
+              currentRoom: {
+                ...currentRoom,
+                gameState: {
+                  ...currentRoom.gameState,
+                  scores,
+                },
+              },
+            });
+          }
+        },
 
         // Game flow helpers
         setShowShuffleAnimation: (showShuffleAnimation) =>
@@ -1568,6 +1569,62 @@ export const useGameStore = create<GameStoreState>()(
                         "All cards dealt. Game starting soon...",
                         "info"
                       );
+
+                    // Deal the remaining 8 cards to each player from the remainingDeck
+                    const remainingCards = get().remainingDeck;
+                    if (remainingCards && remainingCards.length >= 32) {
+                      // 8 cards * 4 players = 32
+                      console.log(
+                        "[GameStore] Dealing remaining 8 cards to each player"
+                      );
+
+                      // Get all players
+                      const allPlayers = get().players;
+
+                      // Create object to hold the additional cards for each player
+                      const additionalCards: Record<string, Card[]> = {};
+
+                      // Deal 8 more cards to each player
+                      allPlayers.forEach((player, playerIndex) => {
+                        additionalCards[player.id] = remainingCards.slice(
+                          playerIndex * 8,
+                          (playerIndex + 1) * 8
+                        );
+                        console.log(
+                          `[GameStore] Dealing 8 more cards to ${player.name} (ID: ${player.id})`
+                        );
+                      });
+
+                      // Update players with their complete hands (5 initial + 8 more = 13 total)
+                      set((state) => {
+                        const updatedPlayers = state.players.map((player) => {
+                          const playerAdditionalCards =
+                            additionalCards[player.id] || [];
+                          const updatedHand = [
+                            ...player.hand,
+                            ...playerAdditionalCards,
+                          ];
+                          console.log(
+                            `[GameStore] Updated ${player.name}'s hand: ${player.hand.length} + ${playerAdditionalCards.length} = ${updatedHand.length} cards`
+                          );
+                          return {
+                            ...player,
+                            hand: updatedHand,
+                          };
+                        });
+
+                        return {
+                          players: updatedPlayers,
+                          // Clear the remaining deck as it's now been dealt
+                          remainingDeck: undefined,
+                        };
+                      });
+                    } else {
+                      console.error(
+                        "[GameStore] No remaining cards to deal or insufficient cards",
+                        remainingCards
+                      );
+                    }
 
                     // Automatically transition to playing phase after a delay
                     setTimeout(() => {

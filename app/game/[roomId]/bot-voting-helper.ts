@@ -5,12 +5,25 @@ import {
   isUIReadyState,
   executeWhenUIReady,
 } from "@/lib/game-flow-manager";
+import { useGameStore } from "@/stores/gameStore";
+import { useUIStore } from "@/stores/uiStore";
+
+// Type definition for message sending function
+type SendMessageFn = (message: any) => Promise<boolean> | boolean;
 
 // Global tracking of bot votes to prevent duplicates
 // This persists across component re-renders
 let globalBotVotes: Record<string, boolean> = {};
 let lastVotingTimestamp = 0;
 const VOTING_COOLDOWN = 3000; // 3 seconds cooldown between voting attempts
+
+// At the top of the file, add an interface for Bot type
+interface Bot {
+  id: string;
+  name: string;
+  isBot?: boolean;
+  [key: string]: any; // Allow for additional properties
+}
 
 /**
  * Reset the global bot votes tracking
@@ -296,132 +309,218 @@ export function forceAllBotsToVote(
 /**
  * Trigger bot voting if needed
  */
-export function triggerBotVoting(
+export async function triggerBotVoting(
   currentRoom: any,
   roomId: string,
-  sendMessage: (message: any) => void,
-  botVotes: Record<string, boolean>,
-  setBotVotes: (
-    votes:
-      | Record<string, boolean>
-      | ((prev: Record<string, boolean>) => Record<string, boolean>)
-  ) => void,
-  votingComplete: boolean
+  sendMessageFn: SendMessageFn,
+  botVotes: Record<string, boolean> = {},
+  setBotVotes: (votes: Record<string, boolean>) => void = () => {},
+  votingComplete: boolean = false
 ) {
+  if (!currentRoom) {
+    console.warn("[Bot Voting] Cannot trigger bot voting: no room found");
+    return;
+  }
+
+  // Skip if voting is already complete
+  if (votingComplete) {
+    console.log("[Bot Voting] Voting already complete, skipping bot voting");
+    return;
+  }
+
+  // Get the gameStatus directly from the store for consistency
+  const gameStatus = useGameStore.getState().gameStatus;
+
+  // Ensure we're in a valid trump selection phase
+  if (gameStatus !== "initial_deal" && gameStatus !== "bidding") {
+    console.error(
+      `[Bot Voting] Not in a valid trump selection phase (current: ${gameStatus}). Must be in initial_deal or bidding phase.`
+    );
+    return;
+  }
+
   // Check if the UI is ready
   if (!isUIReadyState()) {
     console.log(
-      `[Bot Voting] UI is not ready yet, scheduling bot voting for later`
+      `[Bot Voting] UI not ready yet, scheduling bot voting for later`
     );
 
-    // Schedule bot voting for when UI is ready
+    // Wait for UI to be ready
     executeWhenUIReady(() => {
+      console.log(`[Bot Voting] UI ready, triggering bot voting`);
       triggerBotVoting(
         currentRoom,
         roomId,
-        sendMessage,
+        sendMessageFn,
         botVotes,
         setBotVotes,
         votingComplete
       );
-    }, 5000);
+    }, 500);
 
     return;
   }
 
-  // Check if voting is already in progress
-  if (isBotVotingInProgressState()) {
-    console.log(
-      `[Bot Voting] Voting is already in progress, skipping duplicate trigger`
-    );
-    return;
-  }
+  console.log(`[Bot Voting] Starting bot voting check...`);
 
-  // Check if we're within the cooldown period
+  // Check if we've triggered bot voting in the last minute
   const now = Date.now();
-  if (now - lastVotingTimestamp < VOTING_COOLDOWN) {
+  if (now - lastVotingTimestamp < 60000) {
     console.log(
-      `[Bot Voting] Cooldown period active, skipping duplicate trigger`
+      `[Bot Voting] Bot voting was already triggered recently, skipping`
     );
     return;
   }
 
-  // Update timestamp
+  // Update the last voting timestamp
   lastVotingTimestamp = now;
 
-  if (!currentRoom) {
-    console.log(`[Bot Voting] No current room, cannot trigger bot voting`);
-    return;
-  }
+  console.log(`[Bot Voting] Preparing to trigger bot voting...`);
 
-  if (votingComplete) {
-    console.log(`[Bot Voting] Voting is already complete, skipping bot voting`);
-    return;
-  }
-
-  // Only trigger bot voting in initial_deal phase
-  if (currentRoom.gameState.gamePhase !== "initial_deal") {
-    console.log(
-      `[Bot Voting] Not in initial_deal phase (current: ${currentRoom.gameState.gamePhase}), skipping bot voting`
-    );
-    return;
-  }
-
-  // Get all bot players - try both isBot property and name detection
-  let botPlayers = currentRoom.players.filter((p: any) => p.isBot);
-
-  // If no bots found by isBot property, try detecting by name
+  // Get bot players
+  const botPlayers = detectBotsByName(currentRoom.players);
   if (botPlayers.length === 0) {
-    console.log(
-      `[Bot Voting] No bots found by isBot property, trying name detection`
-    );
-    botPlayers = detectBotsByName(currentRoom.players);
-    console.log(
-      `[Bot Voting] Name detection found ${botPlayers.length} potential bots`
-    );
-  }
-
-  if (botPlayers.length === 0) {
-    console.log(
-      `[Bot Voting] No bot players found in the room by any detection method`
-    );
-    return;
-  }
-
-  // Check if all bots have already voted using the global tracking
-  const playersVoted = currentRoom.gameState.playersVoted || [];
-  const botsToVote = botPlayers.filter(
-    (bot) => !globalBotVotes[bot.id] && !playersVoted.includes(bot.id)
-  );
-
-  if (botsToVote.length === 0) {
-    console.log(`[Bot Voting] All bots have already voted globally, skipping`);
+    console.log(`[Bot Voting] No bot players found, skipping bot voting`);
     return;
   }
 
   console.log(
-    `[Bot Voting] Triggering bot voting for ${botsToVote.length} bots:`,
-    botsToVote.map((b: any) => `${b.name} (${b.id})`).join(", ")
+    `[Bot Voting] Found ${botPlayers.length} bots. Triggering voting...`
   );
 
-  // Mark voting as in progress using the global state manager
-  setBotVotingState(true);
-
-  // Make bots vote - pass currentRoom to check for already voted players
-  makeBotVote(
+  // Trigger voting for each bot with a delay
+  voteBots(
     botPlayers,
     roomId,
-    sendMessage,
-    botVotes,
-    setBotVotes,
+    sendMessageFn,
+    globalBotVotes,
+    (votes) => {
+      globalBotVotes = votes;
+      if (setBotVotes) setBotVotes(votes);
+    },
     currentRoom
   );
 
-  // Reset the voting in progress flag after a timeout
+  // Monitor voting after a delay to ensure all votes are cast
   setTimeout(() => {
-    setBotVotingState(false);
-    console.log(
-      `[Bot Voting] Voting process completed, reset in-progress flag`
+    console.log(`[Bot Voting] Checking if all bots have voted...`);
+    ensureAllBotsVoted(
+      botPlayers,
+      roomId,
+      sendMessageFn,
+      globalBotVotes,
+      currentRoom
     );
   }, botPlayers.length * 1000 + 1000); // Allow enough time for all bots to vote
+}
+
+/**
+ * Trigger voting for each bot with a delay
+ */
+function voteBots(
+  botPlayers: Array<Bot>,
+  roomId: string,
+  sendMessage: SendMessageFn,
+  botVotes: Record<string, boolean>,
+  setBotVotes: (votes: Record<string, boolean>) => void,
+  currentRoom: any
+) {
+  // Get the gameStatus directly from the store
+  const gameStatus = useGameStore.getState().gameStatus;
+
+  // Ensure we're in a valid trump selection phase
+  if (gameStatus !== "initial_deal" && gameStatus !== "bidding") {
+    console.error(
+      `[Bot Voting] Not in a valid trump selection phase (current: ${gameStatus}). Must be in initial_deal or bidding phase.`
+    );
+    return;
+  }
+
+  // Process each bot with a delay
+  botPlayers.forEach((bot: Bot, index: number) => {
+    // Skip if bot has already voted
+    if (botVotes[bot.id]) {
+      console.log(`[Bot Voting] Bot ${bot.name} already voted, skipping`);
+      return;
+    }
+
+    // Set a timeout to vote
+    setTimeout(() => {
+      // Double-check if bot has voted by the time this executes
+      if (botVotes[bot.id]) {
+        console.log(
+          `[Bot Voting] Bot ${bot.name} voted while waiting, skipping`
+        );
+        return;
+      }
+
+      // Select a random suit
+      const suits = ["hearts", "diamonds", "clubs", "spades"];
+      const randomSuit = suits[Math.floor(Math.random() * suits.length)];
+
+      console.log(`[Bot Voting] Bot ${bot.name} voting for ${randomSuit}`);
+
+      // Mark this bot as having voted
+      const updatedBotVotes = { ...botVotes };
+      updatedBotVotes[bot.id] = true;
+      setBotVotes(updatedBotVotes);
+
+      // Send the vote message
+      sendMessage({
+        type: "game:trump-vote",
+        payload: {
+          roomId,
+          suit: randomSuit,
+          playerId: bot.id,
+          botId: bot.id, // Include botId to identify bot votes
+        },
+      });
+    }, index * 1000); // Stagger votes by 1 second each
+  });
+}
+
+/**
+ * Ensure all bots have voted
+ */
+function ensureAllBotsVoted(
+  botPlayers: Array<Bot>,
+  roomId: string,
+  sendMessage: SendMessageFn,
+  botVotes: Record<string, boolean>,
+  currentRoom: any
+) {
+  // Get the gameStatus directly from the store
+  const gameStatus = useGameStore.getState().gameStatus;
+
+  // Get the list of bots that haven't voted yet
+  const pendingBots = botPlayers.filter((bot: Bot) => !botVotes[bot.id]);
+
+  // If all bots have voted or we're no longer in a valid trump selection phase, we're done
+  if (
+    pendingBots.length === 0 ||
+    (gameStatus !== "initial_deal" && gameStatus !== "bidding")
+  ) {
+    console.log(
+      `[Bot Voting] All bots have voted or phase changed, no action needed`
+    );
+    return;
+  }
+
+  // Process the remaining bots
+  console.log(
+    `[Bot Voting] ${pendingBots.length} bots haven't voted yet, ensuring they vote...`
+  );
+  voteBots(
+    pendingBots,
+    roomId,
+    sendMessage,
+    botVotes,
+    (updatedVotes) => {
+      // Copy updated votes to global tracking
+      Object.keys(updatedVotes).forEach((key) => {
+        globalBotVotes[key] = updatedVotes[key];
+      });
+    },
+    currentRoom
+  );
 }

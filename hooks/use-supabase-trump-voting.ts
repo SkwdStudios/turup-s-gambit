@@ -37,6 +37,88 @@ export function useSupabaseTrumpVoting(
   const [voterIds, setVoterIds] = useState<Set<string>>(new Set());
   const channelRef = useRef<RealtimeChannel | null>(null);
 
+  // Helper function to update local vote state directly (used as fallback)
+  const updateLocalVote = useCallback(
+    (suit: Suit, voterId: string, skipVoterCheck: boolean = false) => {
+      // If skipVoterCheck is true, we'll update the vote count directly
+      // This is used when we've already added the voter to the set
+      if (skipVoterCheck) {
+        // Just update the vote count
+        setTrumpVotes((prevVotes) => {
+          const newVotes = {
+            ...prevVotes,
+            [suit]: (prevVotes[suit] || 0) + 1,
+          };
+          console.log(`[Trump Voting] Direct update of vote counts:`, newVotes);
+
+          // Check if voting is complete
+          const totalVotes = Object.values(newVotes).reduce(
+            (sum, count) => sum + count,
+            0
+          );
+          const expectedVotes = currentRoom?.players.length || 0;
+
+          if (
+            expectedVotes > 0 &&
+            totalVotes >= expectedVotes &&
+            !votingComplete
+          ) {
+            console.log(`[Trump Voting] Voting complete (direct update).`);
+            setVotingComplete(true);
+          }
+
+          return newVotes;
+        });
+        return;
+      }
+
+      // Normal flow with voter check
+      setVoterIds((prev) => {
+        // If voter already voted, don't count again
+        if (prev.has(voterId)) {
+          console.log(
+            `[Trump Voting] Voter ${voterId} already voted, skipping`
+          );
+          return prev;
+        }
+
+        // Add voter to set
+        const newSet = new Set(prev);
+        newSet.add(voterId);
+
+        // Update vote counts
+        setTrumpVotes((prevVotes) => {
+          const newVotes = {
+            ...prevVotes,
+            [suit]: (prevVotes[suit] || 0) + 1,
+          };
+          console.log(`[Trump Voting] Direct update of vote counts:`, newVotes);
+
+          // Check if voting is complete
+          const totalVotes = Object.values(newVotes).reduce(
+            (sum, count) => sum + count,
+            0
+          );
+          const expectedVotes = currentRoom?.players.length || 0;
+
+          if (
+            expectedVotes > 0 &&
+            totalVotes >= expectedVotes &&
+            !votingComplete
+          ) {
+            console.log(`[Trump Voting] Voting complete (direct update).`);
+            setVotingComplete(true);
+          }
+
+          return newVotes;
+        });
+
+        return newSet;
+      });
+    },
+    [currentRoom, votingComplete]
+  );
+
   const resetVotingState = useCallback(() => {
     console.log("[Trump Voting Hook] Resetting voting state");
     setTrumpVotes({ hearts: 0, diamonds: 0, clubs: 0, spades: 0 });
@@ -47,12 +129,16 @@ export function useSupabaseTrumpVoting(
     resetBotVotesTracking(); // Reset helper state as well
   }, []);
 
-  // Effect to reset voting when game phase changes away from initial_deal
+  // Effect to reset voting when game phase changes away from valid phases
   useEffect(() => {
-    if (currentRoom?.gameState.gamePhase !== "initial_deal") {
+    // Get gameStatus directly from the store for more reliability
+    const { gameStatus } = useGameStore.getState();
+
+    // Only reset if we're not in a valid trump selection phase
+    if (gameStatus !== "initial_deal" && gameStatus !== "bidding") {
       resetVotingState();
     }
-  }, [currentRoom?.gameState.gamePhase, resetVotingState]);
+  }, [currentRoom?.gameState?.gamePhase, resetVotingState]);
 
   // Initialize the Supabase Realtime channel for trump voting
   useEffect(() => {
@@ -171,7 +257,10 @@ export function useSupabaseTrumpVoting(
 
       if (status === "SUBSCRIBED") {
         // Trigger bot voting after channel is subscribed
-        if (currentRoom?.gameState.gamePhase === "initial_deal") {
+        if (
+          currentRoom?.gameState.gamePhase === "initial_deal" ||
+          currentRoom?.gameState.gamePhase === "bidding"
+        ) {
           setTimeout(() => {
             triggerBotVoting(
               currentRoom,
@@ -211,69 +300,100 @@ export function useSupabaseTrumpVoting(
 
   // Function for the current user to cast their vote
   const handleVote = useCallback(
-    (suit: Suit) => {
-      // Get the current game status from the Zustand store
-      const { gameStatus } = useGameStore.getState();
+    async (suit: Suit) => {
+      if (!roomId || !userId) {
+        console.error("[Trump Voting] Cannot vote: missing roomId or userId");
+        return;
+      }
 
-      // Check if we're in a valid phase for voting (either initial_deal or bidding)
-      const isValidPhase =
-        gameStatus === "initial_deal" || gameStatus === "bidding";
+      // Get store state and functions
+      const { currentRoom, selectTrump, setVotingComplete } =
+        useGameStore.getState();
 
-      if (
-        userVote ||
-        votingComplete ||
-        !currentRoom ||
-        !isValidPhase ||
-        !userId ||
-        !channelRef.current
-      ) {
-        console.warn("[Trump Voting] Vote attempt blocked:", {
-          userVote,
-          votingComplete,
-          storePhase: gameStatus,
-          roomPhase: currentRoom?.gameState.gamePhase,
-        });
-        return false;
+      // Check if voting is still valid
+      if (!currentRoom) {
+        console.error("[Trump Voting] Cannot vote: no active room");
+        return;
+      }
+
+      const gameStatus = useGameStore.getState().gameStatus;
+      if (gameStatus !== "initial_deal" && gameStatus !== "bidding") {
+        console.error(
+          `[Trump Voting] Cannot vote: not in a valid trump selection phase (current: ${gameStatus}). Must be in initial_deal or bidding phase.`
+        );
+        return;
       }
 
       console.log(`[Trump Voting] User voting for ${suit}`);
       setUserVote(suit);
 
-      // Send vote through Supabase Realtime
-      try {
-        channelRef.current.send({
-          type: "broadcast",
-          event: "trump-vote",
-          payload: { roomId, suit, playerId: userId },
+      // Check if we have a valid channel
+      if (!channelRef.current) {
+        console.error("[Trump Voting] Cannot vote: channel not established");
+        return;
+      }
+
+      // Send the vote through the Supabase Realtime channel
+      console.log(`[Trump Voting] Sending vote for ${suit} from ${userId}`);
+      const result = await channelRef.current.send({
+        type: "broadcast",
+        event: "trump-vote",
+        payload: {
+          suit,
+          playerId: userId,
+          roomId,
+        },
+      });
+
+      // Check if the vote was sent successfully
+      if (result === "ok") {
+        console.log("[Trump Voting] Vote sent successfully");
+
+        // Update local state
+        setUserVote(suit);
+
+        // Add voter to the set
+        setVoterIds((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(userId);
+          return newSet;
         });
 
-        // Note: We don't immediately update local state since the broadcast
-        // will be received by all clients including the sender
+        // Update local state directly with skipVoterCheck=true since we already added the voter
+        updateLocalVote(suit, userId, true);
 
+        // After vote is processed:
+        // Send the vote to the store as well
+        selectTrump(suit);
         return true;
-      } catch (error) {
-        console.error("[Trump Voting] Failed to send vote:", error);
-        setUserVote(null);
+      } else {
+        console.error("[Trump Voting] Failed to send vote:", result);
         return false;
       }
     },
-    [userVote, votingComplete, currentRoom, roomId, userId]
+    [roomId, userId, userVote, updateLocalVote, votingComplete]
   );
 
   // Function to force any remaining bots to vote
-  const handleForceBotVotes = useCallback(() => {
-    // Get the current game status from the Zustand store
-    const { gameStatus } = useGameStore.getState();
+  const handleForceBotVotes = useCallback(async () => {
+    if (!roomId) {
+      console.error("[Trump Voting] Cannot force bot votes: missing roomId");
+      return;
+    }
 
-    // Check if we're in a valid phase for voting (either initial_deal or bidding)
-    const isValidPhase =
-      gameStatus === "initial_deal" || gameStatus === "bidding";
+    // Get current game state directly from store
+    const { currentRoom, gameStatus } = useGameStore.getState();
 
-    if (!currentRoom || !isValidPhase || !channelRef.current) {
-      console.warn("[Trump Voting] Cannot force bot votes now.", {
-        storePhase: gameStatus,
-        roomPhase: currentRoom?.gameState.gamePhase,
-      });
+    if (!currentRoom) {
+      console.error("[Trump Voting] Cannot force bot votes: no active room");
+      return;
+    }
+
+    // Check if we're in a valid trump selection phase
+    if (gameStatus !== "initial_deal" && gameStatus !== "bidding") {
+      console.error(
+        `[Trump Voting] Not in a valid trump selection phase (current: ${gameStatus}). Must be in initial_deal or bidding phase.`
+      );
       return;
     }
 
@@ -296,6 +416,14 @@ export function useSupabaseTrumpVoting(
     // Force votes for remaining bots
     const suits = ["hearts", "diamonds", "clubs", "spades"] as Suit[];
 
+    // Check if we have a valid channel
+    if (!channelRef.current) {
+      console.error(
+        "[Trump Voting] Cannot force bot votes: channel not established"
+      );
+      return;
+    }
+
     botsToVote.forEach((bot, index) => {
       setTimeout(() => {
         const randomSuit = suits[Math.floor(Math.random() * suits.length)];
@@ -303,15 +431,36 @@ export function useSupabaseTrumpVoting(
           `[Trump Voting] Forcing bot ${bot.name} to vote for ${randomSuit}`
         );
 
-        // Send through Realtime
-        channelRef.current?.send({
+        // Add bot to voter set first to prevent double counting
+        setVoterIds((prev) => {
+          const newSet = new Set(prev);
+          newSet.add(bot.id);
+          return newSet;
+        });
+
+        // Update bot votes tracking
+        setBotVotes((prev) => ({ ...prev, [bot.id]: true }));
+
+        // Try to send through Realtime
+        const sent = channelRef.current?.send({
           type: "broadcast",
           event: "trump-vote",
           payload: { roomId, suit: randomSuit, botId: bot.id },
         });
+
+        // If sending failed or returned false, update local state directly as fallback
+        if (!sent) {
+          console.warn(
+            "[Trump Voting] Bot vote Realtime send failed, using fallback"
+          );
+          updateLocalVote(randomSuit, bot.id, true); // skipVoterCheck=true
+        } else {
+          // Update local state directly with skipVoterCheck=true since we already added the voter
+          updateLocalVote(randomSuit, bot.id, true);
+        }
       }, 500 * (index + 1)); // Stagger votes
     });
-  }, [currentRoom, roomId, botVotes]);
+  }, [roomId, botVotes, voterIds, updateLocalVote]);
 
   return {
     trumpVotes,
