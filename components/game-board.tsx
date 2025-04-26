@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useGameStore } from "@/stores/gameStore";
 import { useUIStore } from "@/stores/uiStore";
 import { useAuthStore } from "@/stores/authStore";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 interface CenterCard {
   id: number;
@@ -55,6 +56,14 @@ interface GameBoardProps {
   sendMessage: (message: any) => Promise<boolean>;
 }
 
+// Define a type for card to avoid implicit any
+type HandCard = {
+  id: number;
+  apiId: string;
+  suit: string;
+  value: string;
+};
+
 export function GameBoard({
   roomId,
   gameMode,
@@ -71,6 +80,8 @@ export function GameBoard({
   const trumpSuit = useGameStore((state) => state.trumpSuit);
   const scores = useGameStore((state) => state.scores);
   const playCardAction = useGameStore((state) => state.playCard);
+  const storedTeamAssignments = useGameStore((state) => state.teamAssignments);
+  const setTeamAssignments = useGameStore((state) => state.setTeamAssignments);
 
   const {
     selectedCard,
@@ -92,9 +103,6 @@ export function GameBoard({
     null
   );
   const [showTrickWinnerMessage, setShowTrickWinnerMessage] = useState(false);
-  const [teamAssignments, setTeamAssignments] = useState<
-    Record<string, "royals" | "rebels">
-  >({});
 
   // Add state for player hand to ensure it updates properly
   const [playerHandCards, setPlayerHandCards] = useState<any[]>([]);
@@ -116,12 +124,18 @@ export function GameBoard({
 
   // Get player hand from game state or use mock data if not available
   const getPlayerHand = useCallback(() => {
+    // Get played cards from the store for this user
+    const playedCardIds = user
+      ? useGameStore.getState().playedCards[user.id] || []
+      : [];
+
     if (gameState && user) {
       // Try to find the player in the game state
       console.log("[GameBoard] Debug GameState:", gameState);
       console.log(
         `[GameBoard] Current game status: ${gameStatus}, initialCardsDeal: ${initialCardsDeal}`
       );
+      console.log("[GameBoard] Previously played cards:", playedCardIds);
 
       const player = gameState.players?.find(
         (p: PlayerInterface) => p.id === user.id
@@ -135,14 +149,22 @@ export function GameBoard({
           id: index,
           suit: card.suit,
           value: card.rank || card.value,
+          apiId: `${card.suit}-${card.rank || card.value}`, // Add API ID for filtering
         }));
 
         // In playing state, always return all cards regardless of initialCardsDeal flag
+        // But filter out cards that have been played
         if (gameStatus === "playing") {
-          console.log(
-            `[GameBoard] In playing state - returning all ${cards.length} cards`
+          const filteredCards = cards.filter(
+            (card: { apiId: string; suit: string; value: string }) =>
+              !playedCardIds.includes(card.apiId) &&
+              !playedCardIds.includes(`${card.suit}-${card.value}`)
           );
-          return cards;
+
+          console.log(
+            `[GameBoard] In playing state - returning ${filteredCards.length} cards (filtered from ${cards.length})`
+          );
+          return filteredCards;
         }
 
         // For other states, respect the initialCardsDeal flag
@@ -156,27 +178,39 @@ export function GameBoard({
 
     // Fallback to mock data if no hand is found
     const mockHand = [
-      { id: 1, suit: "hearts", value: "A" },
-      { id: 2, suit: "spades", value: "K" },
-      { id: 3, suit: "diamonds", value: "Q" },
-      { id: 4, suit: "clubs", value: "J" },
-      { id: 5, suit: "hearts", value: "10" },
-      { id: 6, suit: "spades", value: "9" },
-      { id: 7, suit: "diamonds", value: "8" },
-      { id: 8, suit: "clubs", value: "7" },
-      { id: 9, suit: "hearts", value: "6" },
-      { id: 10, suit: "spades", value: "5" },
-      { id: 11, suit: "diamonds", value: "4" },
-      { id: 12, suit: "clubs", value: "3" },
-      { id: 13, suit: "hearts", value: "2" },
+      { id: 1, suit: "hearts", value: "A", apiId: "hearts-A" },
+      { id: 2, suit: "spades", value: "K", apiId: "spades-K" },
+      { id: 3, suit: "diamonds", value: "Q", apiId: "diamonds-Q" },
+      { id: 4, suit: "clubs", value: "J", apiId: "clubs-J" },
+      { id: 5, suit: "hearts", value: "10", apiId: "hearts-10" },
+      { id: 6, suit: "spades", value: "9", apiId: "spades-9" },
+      { id: 7, suit: "diamonds", value: "8", apiId: "diamonds-8" },
+      { id: 8, suit: "clubs", value: "7", apiId: "clubs-7" },
+      { id: 9, suit: "hearts", value: "6", apiId: "hearts-6" },
+      { id: 10, suit: "spades", value: "5", apiId: "spades-5" },
+      { id: 11, suit: "diamonds", value: "4", apiId: "diamonds-4" },
+      { id: 12, suit: "clubs", value: "3", apiId: "clubs-3" },
+      { id: 13, suit: "hearts", value: "2", apiId: "hearts-2" },
     ];
 
-    // Return all 13 cards if in playing state, otherwise respect initialCardsDeal flag
-    return gameStatus === "playing"
-      ? mockHand
-      : initialCardsDeal
-      ? mockHand.slice(0, 5)
-      : mockHand;
+    // Filter mock hand by played cards too
+    const filteredMockHand = mockHand.filter(
+      (card: HandCard) =>
+        !playedCardIds.includes(card.apiId) &&
+        !playedCardIds.includes(`${card.suit}-${card.value}`)
+    );
+
+    // Return appropriate number of cards, but filtered by played cards
+    if (gameStatus === "playing") {
+      console.log(
+        `[GameBoard] Using mock hand in playing state: ${filteredMockHand.length} cards (filtered from ${mockHand.length})`
+      );
+      return filteredMockHand;
+    } else if (initialCardsDeal) {
+      return filteredMockHand.slice(0, 5);
+    } else {
+      return filteredMockHand;
+    }
   }, [gameState, user, gameStatus, initialCardsDeal]);
 
   // Memoize card click handler to prevent infinite rerenders
@@ -222,7 +256,7 @@ export function GameBoard({
 
       // Convert the card to the proper format for the API
       const apiCard = {
-        id: `${card.suit}-${card.value}`,
+        id: card.apiId || `${card.suit}-${card.value}`,
         suit: card.suit as any,
         rank: card.value as any,
       };
@@ -251,6 +285,11 @@ export function GameBoard({
 
       // Update the current player index optimistically
       setCurrentPlayerIndex(1); // Move to next player
+
+      // Manually record this card as played in the game store
+      if (user && user.id) {
+        useGameStore.getState().updatePlayedCards(user.id, apiCard.id);
+      }
 
       // Use the provided onPlayCard function
       try {
@@ -307,32 +346,75 @@ export function GameBoard({
     onRecordMove(move);
   };
 
-  // Update the player hand when needed - but avoid resetting during trick completions
+  // Update the player hand initialization effect
   useEffect(() => {
-    // Only get the hand from gameState when not initialized or when game status changes
-    // This prevents resetting the hand when only scores are updated
-    if (!handInitialized || gameStatus !== "playing") {
-      const hand = getPlayerHand();
-      console.log(
-        `[GameBoard] Updated player hand from gameState, now has ${
-          hand?.length || 0
-        } cards`
-      );
-      setPlayerHandCards(hand || []);
-      setHandInitialized(true);
-    } else {
-      console.log(
-        "[GameBoard] Preserving existing player hand during gameplay"
-      );
-    }
-  }, [gameState, gameStatus, initialCardsDeal, getPlayerHand, handInitialized]);
+    // Always get a fresh hand when initializing or when game state changes
+    const hand = getPlayerHand();
+    console.log(
+      `[GameBoard] Initializing player hand from gameState, has ${
+        hand?.length || 0
+      } cards (gameStatus: ${gameStatus})`
+    );
 
-  // Reset hand initialization when game status changes from playing to something else
-  useEffect(() => {
-    if (gameStatus !== "playing") {
-      setHandInitialized(false);
+    // Set the hand directly without checking handInitialized flag
+    // This ensures we always have the correct hand after refresh or state change
+    setPlayerHandCards(hand || []);
+
+    // If we're in playing state, we need to ensure handInitialized is true
+    // This prevents the hand from being reset during trick completions
+    if (gameStatus === "playing") {
+      if (!handInitialized) {
+        console.log(
+          "[GameBoard] Setting handInitialized to true for playing state"
+        );
+        setHandInitialized(true);
+      }
+    } else {
+      // For other states, reset handInitialized flag to ensure we'll reload cards when state changes
+      if (handInitialized) {
+        console.log(
+          "[GameBoard] Resetting handInitialized flag for non-playing state"
+        );
+        setHandInitialized(false);
+      }
     }
-  }, [gameStatus]);
+
+    // Force a custom refresh event to ensure other components update
+    if (gameStatus === "playing") {
+      console.log("[GameBoard] Dispatching refresh event for playing state");
+      // Use setTimeout to ensure this happens after state update
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("game:refreshState"));
+      }, 100);
+    }
+  }, [gameState, gameStatus, initialCardsDeal, getPlayerHand]);
+
+  // Fix the force refresh handler to actually update the state properly
+  useEffect(() => {
+    const handleRefreshState = (event: any) => {
+      console.log("[GameBoard] Received force refresh event:", event.detail);
+
+      // Force a re-evaluation of the player's hand
+      const refreshedHand = getPlayerHand();
+      console.log(
+        `[GameBoard] Refreshed hand has ${refreshedHand.length} cards`
+      );
+
+      // Always update the state with the refreshed hand
+      setPlayerHandCards(refreshedHand);
+
+      // Ensure handInitialized is true for playing state
+      if (gameStatus === "playing" && !handInitialized) {
+        setHandInitialized(true);
+      }
+    };
+
+    window.addEventListener("game:refreshState", handleRefreshState);
+
+    return () => {
+      window.removeEventListener("game:refreshState", handleRefreshState);
+    };
+  }, [getPlayerHand, gameStatus, handInitialized]);
 
   // Start the game with player 0 (user) when it enters playing state
   useEffect(() => {
@@ -341,20 +423,83 @@ export function GameBoard({
     }
   }, [gameStatus]);
 
-  // Assign players to teams on component mount
-  useEffect(() => {
-    // Simple team assignment - alternate between teams
-    // In a real implementation, this would come from the server
-    const teams: Record<string, "royals" | "rebels"> = {};
+  // Add a new debug function to help track team assignments
+  const logTeamAssignments = useCallback(() => {
+    console.log("[GameBoard] Current team assignments:", storedTeamAssignments);
+    console.log("[GameBoard] Current players:", players);
 
-    players.forEach((player, index) => {
-      // Even indices (0, 2) are Royals, odd indices (1, 3) are Rebels
-      teams[player] = index % 2 === 0 ? "royals" : "rebels";
+    // Log each player's team assignment for debugging
+    players.forEach((playerName, index) => {
+      console.log(
+        `[GameBoard] Player ${index} (${playerName}): Team ${
+          storedTeamAssignments[playerName] || "unknown"
+        }`
+      );
     });
+  }, [storedTeamAssignments, players]);
 
-    setTeamAssignments(teams);
-    console.log("[GameBoard] Assigned teams:", teams);
-  }, [players]);
+  // Replace the team assignment useEffect with one that respects stored assignments
+  useEffect(() => {
+    // Check if we already have team assignments in the store
+    const hasExistingAssignments =
+      Object.keys(storedTeamAssignments).length > 0;
+
+    if (hasExistingAssignments) {
+      // Use the stored team assignments
+      console.log(
+        "[GameBoard] Using stored team assignments:",
+        storedTeamAssignments
+      );
+
+      // Check if all current players have team assignments
+      const allPlayersHaveTeams = players.every(
+        (playerName) => !!storedTeamAssignments[playerName]
+      );
+
+      if (!allPlayersHaveTeams) {
+        console.log(
+          "[GameBoard] Not all players have team assignments, updating..."
+        );
+        const updatedTeams = { ...storedTeamAssignments };
+
+        players.forEach((playerName, index) => {
+          if (!updatedTeams[playerName]) {
+            // Assign new players based on their position
+            updatedTeams[playerName] = index % 2 === 0 ? "royals" : "rebels";
+            console.log(
+              `[GameBoard] Assigned new player ${playerName} to team ${updatedTeams[playerName]}`
+            );
+          }
+        });
+
+        // Update the store with complete team assignments
+        setTeamAssignments(updatedTeams);
+      }
+    } else {
+      // Create new team assignments
+      const teams: Record<string, "royals" | "rebels"> = {};
+
+      players.forEach((playerName, index) => {
+        // Even indices (0, 2) are Royals, odd indices (1, 3) are Rebels
+        teams[playerName] = index % 2 === 0 ? "royals" : "rebels";
+      });
+
+      // Set store state
+      setTeamAssignments(teams);
+      console.log("[GameBoard] Created new team assignments:", teams);
+    }
+
+    // Log the final team assignments for debugging
+    logTeamAssignments();
+  }, [players, storedTeamAssignments, setTeamAssignments, logTeamAssignments]);
+
+  // When we have team assignments, update the local state
+  useEffect(() => {
+    if (Object.keys(storedTeamAssignments).length > 0) {
+      console.log("[GameBoard] Updated local team assignments from store");
+      setTeamAssignments(storedTeamAssignments);
+    }
+  }, [storedTeamAssignments, setTeamAssignments]);
 
   // Enhance the trick completion handler to show which team won
   const handleTrickCompletion = useCallback(() => {
@@ -383,7 +528,11 @@ export function GameBoard({
 
     // Proper trick winning logic implementation
     // 1. Determine the lead suit (suit of the first card played)
-    const leadSuit = currentCenterCards[0].suit;
+    let leadSuit: string | null = null;
+    if (centerCards.length > 0) {
+      leadSuit = centerCards[0].suit;
+    }
+
     console.log(`[GameBoard] Lead suit is ${leadSuit}`);
 
     // Card rank order (2 is lowest, Ace is highest)
@@ -454,7 +603,7 @@ export function GameBoard({
     const winningPlayerName = winningCard.playedBy;
 
     // Determine which team won (based on player name)
-    const winningTeam = teamAssignments[winningPlayerName] || "royals";
+    const winningTeam = storedTeamAssignments[winningPlayerName] || "royals";
 
     console.log(
       `[GameBoard] Trick won by ${winningPlayerName} (${winningTeam}) with ${winningCard.value} of ${winningCard.suit}`
@@ -540,7 +689,7 @@ export function GameBoard({
     scores,
     recordMove,
     onUpdateGameState,
-    teamAssignments,
+    storedTeamAssignments,
     trumpSuit,
     processedTrickIds,
   ]);
@@ -670,25 +819,6 @@ export function GameBoard({
     ]
   );
 
-  // Listen for force refresh events
-  useEffect(() => {
-    const handleRefreshState = (event: any) => {
-      console.log("[GameBoard] Received force refresh event:", event.detail);
-
-      // Force a re-evaluation of the player's hand
-      const refreshedHand = getPlayerHand();
-      console.log(
-        `[GameBoard] Refreshed hand has ${refreshedHand.length} cards`
-      );
-    };
-
-    window.addEventListener("game:refreshState", handleRefreshState);
-
-    return () => {
-      window.removeEventListener("game:refreshState", handleRefreshState);
-    };
-  }, [getPlayerHand]);
-
   // Bot playing logic
   useEffect(() => {
     // Only run bot logic when game is in playing state and it's not the user's turn
@@ -792,7 +922,7 @@ export function GameBoard({
       });
 
       // Move to next player
-      setCurrentPlayerIndex((currentPlayerIndex + 1) % 4);
+      setCurrentPlayerIndex((prevIndex) => (prevIndex + 1) % 4);
 
       // Record the move
       recordMove({
@@ -800,6 +930,12 @@ export function GameBoard({
         player: botName,
         card: uiCard,
       });
+
+      // Create a synthetic bot ID for tracking played cards
+      const botPlayerId = `bot-${botIndex}-${botName}`;
+
+      // Track this card as played by the bot
+      useGameStore.getState().updatePlayedCards(botPlayerId, cardId);
 
       // Send message to server about the bot play if needed
       if (sendMessage) {
@@ -831,16 +967,20 @@ export function GameBoard({
       roomId,
       sendMessage,
       trumpSuit,
+      setCenterCards,
+      setCurrentPlayerIndex,
     ]
   );
 
   // Helper function to get team color classes
-  const getTeamColorClasses = (team: "royals" | "rebels") => {
+  const getTeamColorClasses = (team: "royals" | "rebels" | undefined) => {
+    if (!team) return "text-gray-400"; // Default color for unknown team
     return team === "royals" ? "text-amber-500" : "text-indigo-500";
   };
 
   // Helper function to get team icon
-  const getTeamIcon = (team: "royals" | "rebels") => {
+  const getTeamIcon = (team: "royals" | "rebels" | undefined) => {
+    if (!team) return "👤"; // Default icon for unknown team
     return team === "royals" ? "👑" : "⚔️";
   };
 
@@ -914,7 +1054,9 @@ export function GameBoard({
                 <div>
                   <ul className="space-y-1">
                     {players
-                      .filter((player) => teamAssignments[player] === "royals")
+                      .filter(
+                        (player) => storedTeamAssignments[player] === "royals"
+                      )
                       .map((player) => (
                         <li key={player} className="text-amber-400">
                           {player}
@@ -925,7 +1067,9 @@ export function GameBoard({
                 <div>
                   <ul className="space-y-1">
                     {players
-                      .filter((player) => teamAssignments[player] === "rebels")
+                      .filter(
+                        (player) => storedTeamAssignments[player] === "rebels"
+                      )
                       .map((player) => (
                         <li key={player} className="text-indigo-400">
                           {player}
@@ -1041,16 +1185,16 @@ export function GameBoard({
                   <div className="font-medieval text-primary">
                     {players.length > 2 ? players[2] || "Player 3" : "Player 3"}
                   </div>
-                  {/* Team indicator */}
-                  {teamAssignments[players[2]] && (
-                    <span
-                      className={`ml-1 ${getTeamColorClasses(
-                        teamAssignments[players[2]]
-                      )}`}
-                    >
-                      {getTeamIcon(teamAssignments[players[2]])}
-                    </span>
-                  )}
+                  {/* Team indicator - make more robust with optional chaining */}
+                  <span
+                    className={`ml-1 ${getTeamColorClasses(
+                      players[2] ? storedTeamAssignments[players[2]] : undefined
+                    )}`}
+                  >
+                    {getTeamIcon(
+                      players[2] ? storedTeamAssignments[players[2]] : undefined
+                    )}
+                  </span>
                 </div>
               </div>
               {/* Vertical cards display */}
@@ -1074,16 +1218,16 @@ export function GameBoard({
                   <div className="font-medieval text-primary">
                     {players.length > 1 ? players[1] || "Player 2" : "Player 2"}
                   </div>
-                  {/* Team indicator */}
-                  {teamAssignments[players[1]] && (
-                    <span
-                      className={`ml-1 ${getTeamColorClasses(
-                        teamAssignments[players[1]]
-                      )}`}
-                    >
-                      {getTeamIcon(teamAssignments[players[1]])}
-                    </span>
-                  )}
+                  {/* Team indicator - make more robust */}
+                  <span
+                    className={`ml-1 ${getTeamColorClasses(
+                      players[1] ? storedTeamAssignments[players[1]] : undefined
+                    )}`}
+                  >
+                    {getTeamIcon(
+                      players[1] ? storedTeamAssignments[players[1]] : undefined
+                    )}
+                  </span>
                 </div>
               </div>
               {/* Vertical cards display */}
@@ -1107,16 +1251,16 @@ export function GameBoard({
                   <div className="font-medieval text-primary">
                     {players.length > 3 ? players[3] || "Player 4" : "Player 4"}
                   </div>
-                  {/* Team indicator */}
-                  {teamAssignments[players[3]] && (
-                    <span
-                      className={`ml-1 ${getTeamColorClasses(
-                        teamAssignments[players[3]]
-                      )}`}
-                    >
-                      {getTeamIcon(teamAssignments[players[3]])}
-                    </span>
-                  )}
+                  {/* Team indicator - make more robust */}
+                  <span
+                    className={`ml-1 ${getTeamColorClasses(
+                      players[3] ? storedTeamAssignments[players[3]] : undefined
+                    )}`}
+                  >
+                    {getTeamIcon(
+                      players[3] ? storedTeamAssignments[players[3]] : undefined
+                    )}
+                  </span>
                 </div>
               </div>
               {/* Vertical cards display */}
@@ -1152,16 +1296,14 @@ export function GameBoard({
                       <div className="text-xs md:text-sm text-muted-foreground mb-1">
                         {card.playedBy}
                       </div>
-                      {/* Team indicator */}
-                      {teamAssignments[card.playedBy] && (
-                        <div
-                          className={`text-xs ${getTeamColorClasses(
-                            teamAssignments[card.playedBy]
-                          )} mb-1`}
-                        >
-                          {getTeamIcon(teamAssignments[card.playedBy])}
-                        </div>
-                      )}
+                      {/* Team indicator with better undefined handling */}
+                      <div
+                        className={`text-xs ${getTeamColorClasses(
+                          storedTeamAssignments[card.playedBy]
+                        )} mb-1`}
+                      >
+                        {getTeamIcon(storedTeamAssignments[card.playedBy])}
+                      </div>
                     </div>
                     <Card
                       suit={card.suit}
@@ -1283,23 +1425,21 @@ export function GameBoard({
                 ))}
               </div>
 
-              {/* Player name and team */}
-              <div className="flex flex-col items-center">
-                <div className="flex items-center">
-                  <div className="font-medieval text-primary">
-                    {user?.username || "Player 1"}
-                  </div>
-                  {/* Team badge for user */}
-                  {user && teamAssignments[user.username] && (
-                    <span
-                      className={`ml-1 ${getTeamColorClasses(
-                        teamAssignments[user.username]
-                      )}`}
-                    >
-                      {getTeamIcon(teamAssignments[user.username])}
-                    </span>
-                  )}
+              {/* Player name and team - improved with better undefined handling */}
+              <div className="flex items-center justify-center mb-2">
+                <div className="font-medieval text-primary text-lg">
+                  {user?.username || "You"}
                 </div>
+                {/* Current player team indicator - make more robust */}
+                {user?.username && (
+                  <span
+                    className={`ml-1 text-lg ${getTeamColorClasses(
+                      storedTeamAssignments[user.username]
+                    )}`}
+                  >
+                    {getTeamIcon(storedTeamAssignments[user.username])}
+                  </span>
+                )}
               </div>
 
               {/* Emote controls */}

@@ -23,7 +23,11 @@ import { WaitingRoom } from "@/components/waiting-room";
 // import { isPlayerHost } from "@/utils/game-helpers";
 
 // Import Zustand stores
-import { useGameStore, type GameStoreState } from "@/stores/gameStore";
+import {
+  useGameStore,
+  type GameStoreState,
+  fetchRoomStateFromSupabase,
+} from "@/stores/gameStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useUIStore } from "@/stores/uiStore";
 
@@ -237,6 +241,7 @@ function GameRoomContentInner() {
   const phaseTransitionMessage = useGameStore(
     (state) => state.phaseTransitionMessage
   );
+  const sendMessage = useGameStore((state) => state.sendMessage);
 
   // Group actions together with useShallow to maintain reference stability
   const {
@@ -252,6 +257,7 @@ function GameRoomContentInner() {
     setIsPhaseTransitioning,
     setPhaseTransitionMessage,
     setInitialCardsDeal,
+    setPlayers,
   } = useGameStore(
     useShallow((state: GameStoreState) => ({
       startGame: state.startGame,
@@ -266,6 +272,7 @@ function GameRoomContentInner() {
       setIsPhaseTransitioning: state.setIsPhaseTransitioning,
       setPhaseTransitionMessage: state.setPhaseTransitionMessage,
       setInitialCardsDeal: state.setInitialCardsDeal,
+      setPlayers: state.setPlayers,
     }))
   );
 
@@ -287,7 +294,8 @@ function GameRoomContentInner() {
     votingComplete,
     handleVote,
     handleForceBotVotes: forceBotVotes,
-  } = useSupabaseTrumpVoting(currentRoom, roomId as string, user?.id);
+    loading: trumpVotingLoading,
+  } = useSupabaseTrumpVoting(roomId as string);
 
   // Local component state
   const [isStartingGame, setIsStartingGame] = useState(false);
@@ -414,44 +422,62 @@ function GameRoomContentInner() {
   };
 
   const handleFinalShuffleDrawComplete = () => {
-    setShowShuffleAnimation(false);
-    console.log("[GameRoom] Final shuffle animation completed");
-
-    // Log player hands to verify they have all 13 cards
     console.log(
-      "[GameRoom] Player hands after final deal:",
-      players.map((p) => ({
-        id: p.id,
-        name: p.name,
-        handLength: p.hand?.length || 0,
-      }))
+      "[GameRoom] Final shuffle draw complete, transitioning to playing phase"
     );
 
-    // Set initialCardsDeal to false to show all 13 cards
-    setInitialCardsDeal(false);
+    // Set a temporary message
+    setStatusMessage("All cards dealt! Starting game...");
 
-    // Show a transitioning message
+    // Transition to playing phase after a delay (final cards are dealt)
     setIsPhaseTransitioning(true);
-    setPhaseTransitionMessage("Game Starting");
-    setStatusMessage("All cards dealt. Game is starting!");
+    setPhaseTransitionMessage("Game Starting...");
 
-    // Add a slight delay for the transition effect
+    // Explicitly turn off the initialCardsDeal flag
+    setInitialCardsDeal(false);
+    console.log("[GameRoom] Explicitly setting initialCardsDeal to false");
+
+    // Set isGameBoardReady to false temporarily to force a reload
+    setIsGameBoardReady(false);
+
     setTimeout(() => {
-      // Set game status to playing
+      // Clear the status message
+      setStatusMessage(null);
+
+      // Set the phase
       setGameStatus("playing");
 
-      // First make sure the game board is ready
+      // Turn off transitions
+      setIsPhaseTransitioning(false);
+      setPhaseTransitionMessage("");
+
+      // Re-enable game board with full set of cards
       setIsGameBoardReady(true);
 
-      // Start the first turn
-      setCurrentPlayer(user?.username || players[0]?.name || "Player 1");
+      // Force a refresh of the game board to show all cards
+      window.dispatchEvent(
+        new CustomEvent("game:refreshState", {
+          detail: {
+            phase: "playing",
+            initialCardsDeal: false,
+          },
+        })
+      );
 
-      // Hide the transition effect
-      setTimeout(() => {
-        setIsPhaseTransitioning(false);
-        setPhaseTransitionMessage("");
-      }, 1500);
-    }, 1000);
+      console.log(
+        "[GameRoom] Transitioned to playing phase, dispatched refresh event"
+      );
+
+      // Send a realtime message to update all clients
+      sendMessage({
+        type: "game:playing-started",
+        payload: {
+          roomId,
+          gamePhase: "playing",
+          initialCardsDeal: false,
+        },
+      });
+    }, 2000);
   };
 
   // Reset game board ready state when game status changes to final_deal
@@ -658,9 +684,21 @@ function GameRoomInitializer({
   roomId: string;
   children: React.ReactNode;
 }) {
-  const { setRoomId, joinRoom, currentRoom } = useGameStore();
+  const {
+    setRoomId,
+    joinRoom,
+    currentRoom,
+    gameStatus,
+    setGameStatus,
+    setTrumpSuit,
+    updateScores,
+    setInitialCardsDeal,
+    setTeamAssignments,
+    setPlayers,
+  } = useGameStore();
   const { user } = useAuthStore();
   const hasJoinedRef = React.useRef(false);
+  const hasRestoredStateRef = React.useRef(false);
 
   // Initialize the game with the room ID
   useEffect(() => {
@@ -668,14 +706,91 @@ function GameRoomInitializer({
       console.log("[GameRoomInitializer] Initializing room", roomId);
       setRoomId(roomId);
 
-      // Only join if we haven't already joined
-      if (!currentRoom) {
-        console.log("[GameRoomInitializer] Joining room as", user.username);
-        joinRoom(roomId, user.username);
-        hasJoinedRef.current = true;
-      }
+      const initRoom = async () => {
+        // First attempt to fetch current room state from Supabase
+        const roomState = await fetchRoomStateFromSupabase(roomId);
+
+        if (roomState) {
+          console.log("[GameRoomInitializer] Recovered room state:", roomState);
+
+          // Restore game status and other critical data from saved state
+          if (roomState.gameStatus && roomState.gameStatus !== "waiting") {
+            console.log(
+              `[GameRoomInitializer] Restoring game status to ${roomState.gameStatus}`
+            );
+            setGameStatus(roomState.gameStatus as any);
+
+            // Restore players if available
+            if (roomState.players && roomState.players.length > 0) {
+              console.log(
+                "[GameRoomInitializer] Restoring player data:",
+                roomState.players
+              );
+              setPlayers(roomState.players);
+            }
+
+            // Restore other critical game state
+            if (roomState.roomState?.gameState?.trumpSuit) {
+              setTrumpSuit(roomState.roomState.gameState.trumpSuit);
+            }
+
+            if (roomState.roomState?.gameState?.scores) {
+              updateScores(roomState.roomState.gameState.scores);
+            }
+
+            // Restore team assignments if available
+            if (
+              roomState.teamAssignments &&
+              Object.keys(roomState.teamAssignments).length > 0
+            ) {
+              console.log(
+                "[GameRoomInitializer] Restoring team assignments:",
+                roomState.teamAssignments
+              );
+              setTeamAssignments(roomState.teamAssignments);
+            }
+
+            // Set initialCardsDeal based on game phase
+            const shouldHaveInitialCards =
+              roomState.gameStatus === "initial_deal" ||
+              roomState.gameStatus === "bidding";
+            setInitialCardsDeal(shouldHaveInitialCards);
+
+            hasRestoredStateRef.current = true;
+          }
+        }
+
+        // Only join if we haven't already joined
+        if (!currentRoom) {
+          console.log("[GameRoomInitializer] Joining room as", user.username);
+          await joinRoom(roomId, user.username);
+          hasJoinedRef.current = true;
+        }
+      };
+
+      initRoom();
     }
-  }, [roomId, user, currentRoom, setRoomId, joinRoom]);
+  }, [
+    roomId,
+    user,
+    currentRoom,
+    setRoomId,
+    joinRoom,
+    setGameStatus,
+    setTrumpSuit,
+    updateScores,
+    setInitialCardsDeal,
+    setTeamAssignments,
+    setPlayers,
+  ]);
+
+  // On component unmount, clean up
+  useEffect(() => {
+    return () => {
+      hasJoinedRef.current = false;
+      hasRestoredStateRef.current = false;
+    };
+  }, []);
 
   return <>{children}</>;
 }

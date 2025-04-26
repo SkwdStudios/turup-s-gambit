@@ -4,6 +4,7 @@ import { GameRoom, Player, GameState, Card, Suit } from "@/app/types/game";
 import { devtools } from "zustand/middleware";
 import { useAuthStore } from "./authStore";
 import { useUIStore } from "./uiStore";
+import { toast } from "sonner";
 
 // Card deck helper functions
 function createDeck(): Card[] {
@@ -154,7 +155,7 @@ export type GameStatus =
   | "bidding"
   | "final_deal"
   | "playing"
-  | "ended";
+  | "finished";
 
 export interface GameStoreState {
   // Room and players data
@@ -163,6 +164,7 @@ export interface GameStoreState {
   players: Player[];
   isLoading: boolean;
   isConnected: boolean;
+  userId: string | null;
 
   // Game configuration
   gameMode: GameMode;
@@ -173,6 +175,9 @@ export interface GameStoreState {
   currentTrick: Card[];
   scores: { royals: number; rebels: number };
   currentPlayer: string;
+
+  // Add this new field for team assignments
+  teamAssignments: Record<string, "royals" | "rebels">;
 
   // Additional game state
   specialPowers?: Record<string, boolean>;
@@ -187,6 +192,10 @@ export interface GameStoreState {
   phaseTransitionMessage: string;
   isGameBoardReady: boolean;
   votingComplete: boolean;
+  trumpSelectionInProgress: boolean;
+
+  // Add this to track played cards per player
+  playedCards: Record<string, string[]>; // playerId -> array of card IDs played
 
   // Actions
   setRoom: (room: GameRoom | null) => void;
@@ -206,10 +215,10 @@ export interface GameStoreState {
   addBots: () => Promise<void>;
 
   // Game state update helpers
-  updateGameState: (newState: Partial<GameState>) => void;
+  updateGameState: (newState: any) => void;
   setStatusMessage: (message: string | null) => void;
   setIsAddingBots: (value: boolean) => void;
-  setTrumpSuit: (suit: Suit | null) => void;
+  setTrumpSuit: (suit: Suit) => void;
   setCurrentTrick: (trick: Card[]) => void;
   setCurrentPlayer: (player: string) => void;
   updateScores: (newScores: { royals: number; rebels: number }) => void;
@@ -225,6 +234,12 @@ export interface GameStoreState {
   // Real-time communication
   sendMessage: (message: any) => Promise<boolean>;
   subscribeToRealtime: () => Promise<void>;
+
+  // Add a new action to set team assignments
+  setTeamAssignments: (teams: Record<string, "royals" | "rebels">) => void;
+
+  // Add a new action to update played cards
+  updatePlayedCards: (playerId: string, cardId: string) => void;
 }
 
 export const useGameStore = create<GameStoreState>()(
@@ -239,13 +254,16 @@ export const useGameStore = create<GameStoreState>()(
         gameStatus: "waiting",
         isLoading: true,
         isConnected: false,
+        userId: null,
 
         trumpSuit: null,
         currentTrick: [],
         scores: { royals: 0, rebels: 0 },
         currentPlayer: "",
+        teamAssignments: {}, // Add empty team assignments object
         specialPowers: undefined,
         remainingDeck: undefined,
+        playedCards: {}, // Initialize the played cards tracking
 
         showShuffleAnimation: false,
         initialCardsDeal: false,
@@ -255,6 +273,7 @@ export const useGameStore = create<GameStoreState>()(
         phaseTransitionMessage: "",
         isGameBoardReady: false,
         votingComplete: false,
+        trumpSelectionInProgress: false,
 
         // Basic setters
         setRoom: (room) => set({ currentRoom: room }),
@@ -304,7 +323,7 @@ export const useGameStore = create<GameStoreState>()(
         // Game actions
         joinRoom: async (roomId, playerName) => {
           const user = useAuthStore.getState().user;
-          const { currentRoom, players } = get();
+          const { currentRoom, players, gameStatus } = get();
 
           if (!user) {
             console.error("[GameStore] Cannot join room, no user is logged in");
@@ -332,38 +351,59 @@ export const useGameStore = create<GameStoreState>()(
           // In a real implementation, this would connect to Supabase realtime
           // or other websocket connection
 
+          // Preserve current gameStatus if it's not waiting - this means we've restored state
+          const preserveGameStatus = gameStatus !== "waiting";
+          console.log(
+            `[GameStore] Current gameStatus: ${gameStatus}, preserving: ${preserveGameStatus}`
+          );
+
+          // Either use existing players or create a new list if there are no existing players
+          const existingPlayers = players.length > 0 ? [...players] : [];
+
+          // Check if our user is already in the players list
+          const userExists = existingPlayers.some((p) => p.id === user.id);
+
+          // Create the current user player object
+          const currentUserPlayer = {
+            id: user.id,
+            name: user.username,
+            isHost: existingPlayers.length === 0, // Only be host if first player
+            isBot: false,
+            isReady: true,
+            hand: [],
+            score: 0,
+          };
+
+          // If we have existing players but user isn't in the list, add them
+          if (existingPlayers.length > 0 && !userExists) {
+            existingPlayers.push(currentUserPlayer);
+          }
+
+          // Prepare the player list
+          const updatedPlayers =
+            existingPlayers.length > 0 ? existingPlayers : [currentUserPlayer];
+
+          console.log("[GameStore] Updated players list:", updatedPlayers);
+
           // For now, we'll just simulate joining a room
           const mockRoom: GameRoom = {
             id: roomId,
             createdAt: Date.now(),
             lastActivity: Date.now(),
-            players: [
-              {
-                id: user.id,
-                name: user.username,
-                isHost: true,
-                isBot: false,
-                isReady: true,
-                hand: [],
-                score: 0,
-              },
-            ],
+            players: updatedPlayers,
             gameState: {
               currentTurn: null,
-              trumpSuit: null,
+              trumpSuit: get().trumpSuit, // Preserve trump suit
               currentBid: 0,
               currentBidder: null,
               trickCards: {},
               roundNumber: 0,
-              gamePhase: "waiting",
+              gamePhase: preserveGameStatus ? gameStatus : "waiting",
               teams: {
                 royals: [],
                 rebels: [],
               },
-              scores: {
-                royals: 0,
-                rebels: 0,
-              },
+              scores: get().scores, // Preserve scores
               consecutiveTricks: {
                 royals: 0,
                 rebels: 0,
@@ -377,13 +417,14 @@ export const useGameStore = create<GameStoreState>()(
           // Simulate delay for network request
           await new Promise((resolve) => setTimeout(resolve, 500));
 
-          set({
+          set((state) => ({
             currentRoom: mockRoom,
-            players: mockRoom.players,
+            players: updatedPlayers,
             isLoading: false,
             isConnected: true,
-            gameStatus: "waiting",
-          });
+            // Preserve the current gameStatus if we've recovered state
+            gameStatus: preserveGameStatus ? state.gameStatus : "waiting",
+          }));
 
           // Send join message to the server
           const joinSuccess = await get().sendMessage({
@@ -393,12 +434,15 @@ export const useGameStore = create<GameStoreState>()(
               player: {
                 id: user.id,
                 name: user.username,
-                isHost: true, // First player is host
+                isHost: existingPlayers.length === 0, // Only be host if first player
                 isBot: false,
                 isReady: true,
               },
               playerName: user.username, // Add explicit playerName field
               playerId: user.id, // Add explicit playerId field
+              // Include the current game state so other clients can sync
+              currentGameStatus: get().gameStatus,
+              preservedState: preserveGameStatus,
             },
           });
 
@@ -459,6 +503,19 @@ export const useGameStore = create<GameStoreState>()(
 
           console.log("[GameStore] Starting game...");
 
+          // Initialize team assignments if they don't exist
+          if (Object.keys(get().teamAssignments).length === 0) {
+            const teams: Record<string, "royals" | "rebels"> = {};
+
+            players.forEach((player, index) => {
+              // Even indices (0, 2) are Royals, odd indices (1, 3) are Rebels
+              teams[player.name] = index % 2 === 0 ? "royals" : "rebels";
+            });
+
+            set({ teamAssignments: teams });
+            console.log("[GameStore] Created initial team assignments:", teams);
+          }
+
           // Set the game status to initial deal and enable shuffle animation
           set({
             gameStatus: "initial_deal",
@@ -477,6 +534,7 @@ export const useGameStore = create<GameStoreState>()(
               roomId: currentRoom.id,
               gamePhase: "initial_deal",
               initialCardsDeal: true,
+              teamAssignments: get().teamAssignments, // Send team assignments to all players
             },
           });
         },
@@ -658,8 +716,8 @@ export const useGameStore = create<GameStoreState>()(
                 errorMessage =
                   "Dealing remaining 8 cards. Please wait for the game to start.";
                 break;
-              case "ended":
-                errorMessage = "Game has ended. Please start a new game.";
+              case "finished":
+                errorMessage = "Game has finished. Please start a new game.";
                 break;
               default:
                 errorMessage = `Cannot play card yet. Current phase: ${gameStatus}`;
@@ -702,6 +760,11 @@ export const useGameStore = create<GameStoreState>()(
               ? parseInt(card.id.replace(/\D/g, ""), 10) || 0
               : 0;
           setPlayingCardId(numericCardId);
+
+          // Update played cards for this user
+          if (user && card.id) {
+            get().updatePlayedCards(user.id, card.id);
+          }
 
           // Send play card message to the server
           get().sendMessage({
@@ -754,35 +817,39 @@ export const useGameStore = create<GameStoreState>()(
           });
         },
 
-        selectTrump: (suit) => {
-          const { roomId, currentRoom, remainingDeck } = get();
-          const user = useAuthStore.getState().user;
-          const { setShowTrumpPopup, showToast } = useUIStore.getState();
-
-          if (!roomId || !currentRoom || !user) {
-            console.error("[GameStore] Cannot select trump, no active room");
+        selectTrump: (suit: Suit) => {
+          const { currentRoom, userId } = get();
+          if (!currentRoom || !userId) {
+            console.error(
+              "[GameStore] Cannot start trump selection: no active room or user"
+            );
             return;
           }
 
-          // Send trump selection message (in real implementation)
-          get().sendMessage({
-            type: "game:select-trump",
-            payload: {
-              roomId,
-              playerId: user.id,
-              suit,
-            },
-          });
+          // Just send out a message that voting is underway
+          toast.info(`Trump selection started! Vote for your preferred suit.`);
 
-          // Update local state (in real app, this would be confirmed by the server)
+          // Set the selection phase
+          set({ trumpSelectionInProgress: true });
+        },
+
+        // Add a new function to set the trump suit from voting results
+        setTrumpSuit: (suit: Suit) => {
+          const { currentRoom } = get();
+          if (!currentRoom) {
+            console.error("[GameStore] Cannot set trump suit: no active room");
+            return;
+          }
+
+          // Mark selection as complete and set the trump suit
           set({
             trumpSuit: suit,
-            votingComplete: true,
-            gameStatus: "bidding",
+            trumpSelectionInProgress: false,
+            gameStatus: "bidding", // Move to bidding phase after trump is selected
           });
 
-          // Show toast notification
-          showToast(`Trump suit selected: ${suit}`, "success");
+          console.log(`[GameStore] Trump suit set to ${suit}`);
+          toast.success(`Trump suit selected: ${suit}`);
         },
 
         // Game state update helpers
@@ -804,6 +871,18 @@ export const useGameStore = create<GameStoreState>()(
             const updatedState: Partial<GameStoreState> = {
               currentRoom: updatedRoom,
             };
+
+            // Process special update fields
+            if (newState.updateField === "game_end") {
+              console.log(
+                "[GameStore] Game end signal received, updating game status to finished"
+              );
+              updatedState.gameStatus = "finished";
+              // Also set it in gamePhase for consistency
+              if (updatedRoom) {
+                updatedRoom.gameState.gamePhase = "finished";
+              }
+            }
 
             // Map fields from newState to the top-level state
             if (newState.trumpSuit !== undefined) {
@@ -830,36 +909,21 @@ export const useGameStore = create<GameStoreState>()(
 
         setIsAddingBots: (isAddingBots) => set({ isAddingBots }),
 
-        setTrumpSuit: (trumpSuit) => {
-          set({ trumpSuit });
+        setCurrentTrick: (trick: Card[]) => {
+          set({ currentTrick: trick });
 
           // Also update in the room gameState
           const currentRoom = get().currentRoom;
           if (currentRoom) {
+            // Update the gameState with the current trick
             set({
               currentRoom: {
                 ...currentRoom,
                 gameState: {
                   ...currentRoom.gameState,
-                  trumpSuit,
-                },
-              },
-            });
-          }
-        },
-
-        setCurrentTrick: (currentTrick) => {
-          set({ currentTrick });
-
-          // Also update in the room gameState
-          const currentRoom = get().currentRoom;
-          if (currentRoom) {
-            set({
-              currentRoom: {
-                ...currentRoom,
-                gameState: {
-                  ...currentRoom.gameState,
-                  trickCards: currentTrick,
+                  trickCards: Object.fromEntries(
+                    trick.map((card, index) => [index.toString(), card])
+                  ), // Convert array to object for Supabase
                 },
               },
             });
@@ -1147,6 +1211,7 @@ export const useGameStore = create<GameStoreState>()(
                     // Enhanced safety check for message payload structure
                     // The payload can either be a player object directly or contain a nested player property
                     let playerObject = null;
+                    let preservedGameState = false;
 
                     // Check if we have a valid payload
                     if (!message.payload) {
@@ -1155,6 +1220,15 @@ export const useGameStore = create<GameStoreState>()(
                         message
                       );
                       break;
+                    }
+
+                    // Check if this message contains preserved game state
+                    if (message.payload.preservedState === true) {
+                      console.log(
+                        "[GameStore] Player rejoined with preserved state:",
+                        message.payload.currentGameStatus
+                      );
+                      preservedGameState = true;
                     }
 
                     // Handle both payload formats: direct player object or nested player object
@@ -1184,6 +1258,44 @@ export const useGameStore = create<GameStoreState>()(
                       break;
                     }
 
+                    // Check if we have team assignments but the new player doesn't have one
+                    if (
+                      Object.keys(get().teamAssignments).length > 0 &&
+                      playerObject &&
+                      playerObject.name &&
+                      !get().teamAssignments[playerObject.name]
+                    ) {
+                      // Get current players in each team
+                      const royalPlayers = Object.entries(
+                        get().teamAssignments
+                      ).filter(([_, team]) => team === "royals").length;
+                      const rebelPlayers = Object.entries(
+                        get().teamAssignments
+                      ).filter(([_, team]) => team === "rebels").length;
+
+                      // Assign to the team with fewer players, or if equal, alternate
+                      const team =
+                        royalPlayers < rebelPlayers
+                          ? "royals"
+                          : royalPlayers > rebelPlayers
+                          ? "rebels"
+                          : Object.keys(get().teamAssignments).length % 2 === 0
+                          ? "royals"
+                          : "rebels";
+
+                      // Update team assignments
+                      set((state) => ({
+                        teamAssignments: {
+                          ...state.teamAssignments,
+                          [playerObject.name]: team,
+                        },
+                      }));
+
+                      console.log(
+                        `[GameStore] Assigned player ${playerObject.name} to team ${team}`
+                      );
+                    }
+
                     set((state) => {
                       // Additional safety check for state.players
                       const currentPlayers = Array.isArray(state.players)
@@ -1203,10 +1315,45 @@ export const useGameStore = create<GameStoreState>()(
                         return state; // Return unchanged state
                       }
 
-                      // Add the new player
-                      return {
+                      // If player has rejoined with preserved state, respect their current game status
+                      const updatedState: Partial<GameStoreState> = {
                         players: [...currentPlayers, playerObject],
                       };
+
+                      // If player rejoined with preserved state and this is not the first player,
+                      // update our game state to match if it's in a more advanced phase
+                      if (
+                        preservedGameState &&
+                        message.payload.currentGameStatus
+                      ) {
+                        const currentStatus = state.gameStatus;
+                        const incomingStatus =
+                          message.payload.currentGameStatus;
+
+                        // Game Status priority: finished > playing > final_deal > bidding > initial_deal > waiting
+                        const statusPriority: Record<GameStatus, number> = {
+                          waiting: 0,
+                          initial_deal: 1,
+                          bidding: 2,
+                          final_deal: 3,
+                          playing: 4,
+                          finished: 5,
+                        };
+
+                        // Only update if incoming status has higher priority
+                        if (
+                          statusPriority[incomingStatus as GameStatus] >
+                          statusPriority[currentStatus]
+                        ) {
+                          console.log(
+                            `[GameStore] Updating game status from ${currentStatus} to ${incomingStatus} based on rejoined player state`
+                          );
+                          updatedState.gameStatus =
+                            incomingStatus as GameStatus;
+                        }
+                      }
+
+                      return updatedState;
                     });
                     break;
 
@@ -1243,6 +1390,15 @@ export const useGameStore = create<GameStoreState>()(
                       initialCardsDeal: true,
                       statusMessage: "Game starting... Dealing initial cards",
                     });
+
+                    // Check if the message contains team assignments
+                    if (message.payload.teamAssignments) {
+                      console.log(
+                        "[GameStore] Received team assignments from host:",
+                        message.payload.teamAssignments
+                      );
+                      set({ teamAssignments: message.payload.teamAssignments });
+                    }
 
                     // Deal initial cards to players
                     const deck = createDeck();
@@ -1679,18 +1835,42 @@ export const useGameStore = create<GameStoreState>()(
 
                         return {
                           gameStatus: "playing",
+                          initialCardsDeal: false, // Important: Explicitly set initialCardsDeal to false
                           statusMessage: "Game started! Your turn to play...",
                           // Set current player to actual username instead of "Player 1"
                           currentPlayer: currentUser?.username || "",
                         };
                       });
+
+                      // Force a refresh of the game board via a custom event
+                      // This needs to run on the client side only
+                      try {
+                        if (typeof window !== "undefined") {
+                          console.log(
+                            "[GameStore] Dispatching force refresh event for playing state"
+                          );
+                          window.dispatchEvent(
+                            new CustomEvent("game:refreshState", {
+                              detail: {
+                                source: "realtime",
+                                phase: "playing",
+                              },
+                            })
+                          );
+                        }
+                      } catch (error) {
+                        console.error(
+                          "[GameStore] Error dispatching refresh event:",
+                          error
+                        );
+                      }
                     }
                     break;
 
                   case "game:over":
                     // Game has ended
                     set({
-                      gameStatus: "ended",
+                      gameStatus: "finished",
                       statusMessage: message.payload?.winner
                         ? `Game over! ${
                             message.payload.winner === "royals"
@@ -1740,16 +1920,130 @@ export const useGameStore = create<GameStoreState>()(
             set({ isConnected: false });
           }
         },
+
+        // Add setter for team assignments
+        setTeamAssignments: (teams) => set({ teamAssignments: teams }),
+
+        // Add the new action to update played cards
+        updatePlayedCards: (playerId, cardId) => {
+          set((state) => {
+            // Get current played cards for this player or initialize empty array
+            const currentPlayedCards = state.playedCards[playerId] || [];
+
+            // Add the new card if it's not already in the array
+            if (!currentPlayedCards.includes(cardId)) {
+              return {
+                playedCards: {
+                  ...state.playedCards,
+                  [playerId]: [...currentPlayedCards, cardId],
+                },
+              };
+            }
+            return state; // No change if card was already played
+          });
+        },
       }),
       {
-        name: "game-storage",
+        name: "turup-game-store",
         storage: createJSONStorage(() => localStorage),
-        // Only persist a subset of the state to avoid storage bloat
+        // Expand persistence to include critical game state and team assignments
         partialize: (state) => ({
           roomId: state.roomId,
           gameMode: state.gameMode,
+          gameStatus: state.gameStatus,
+          trumpSuit: state.trumpSuit,
+          currentTrick: state.currentTrick,
+          scores: state.scores,
+          initialCardsDeal: state.initialCardsDeal,
+          teamAssignments: state.teamAssignments,
+          playedCards: state.playedCards, // Add playedCards to persisted state
+          players: state.players, // Add players to persisted state
         }),
       }
     )
   )
 );
+
+// Update the fetchRoomStateFromSupabase function to include players
+export const fetchRoomStateFromSupabase = async (roomId: string) => {
+  if (!roomId) return null;
+
+  console.log(
+    `[GameStore] Fetching current state for room ${roomId} from Supabase`
+  );
+
+  try {
+    // In a real implementation, this would query Supabase for the room state
+    // For now, let's simulate a delay and return a mock state based on what's stored
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    // Get stored game status from local storage if available
+    const storedState = localStorage.getItem("game-storage");
+    let savedStatus = "waiting";
+    let savedTrumpSuit = null;
+    let savedScores = { royals: 0, rebels: 0 };
+    let savedTeamAssignments = {};
+    let savedPlayers = [];
+
+    if (storedState) {
+      try {
+        const parsed = JSON.parse(storedState);
+        if (parsed.state) {
+          savedStatus = parsed.state.gameStatus || "waiting";
+          savedTrumpSuit = parsed.state.trumpSuit;
+          savedScores = parsed.state.scores || { royals: 0, rebels: 0 };
+          savedTeamAssignments = parsed.state.teamAssignments || {};
+          savedPlayers = parsed.state.players || [];
+        }
+      } catch (e) {
+        console.error("[GameStore] Error parsing stored state:", e);
+      }
+    }
+
+    console.log(`[GameStore] Recovered saved game status: ${savedStatus}`);
+    console.log(
+      `[GameStore] Recovered team assignments:`,
+      savedTeamAssignments
+    );
+    console.log(`[GameStore] Recovered players:`, savedPlayers);
+
+    // Use the saved status to create a properly shaped response
+    const gameState = {
+      currentTurn: null,
+      trumpSuit: savedTrumpSuit,
+      currentBid: 0,
+      currentBidder: null,
+      trickCards: {},
+      roundNumber: 0,
+      gamePhase: savedStatus,
+      teams: {
+        royals: [],
+        rebels: [],
+      },
+      scores: savedScores,
+      consecutiveTricks: {
+        royals: 0,
+        rebels: 0,
+      },
+      lastTrickWinner: null,
+      dealerIndex: 0,
+      trumpCaller: null,
+    };
+
+    return {
+      roomState: {
+        id: roomId,
+        createdAt: Date.now() - 3600000, // Simulate room created 1 hour ago
+        lastActivity: Date.now(),
+        gameState: gameState,
+        players: savedPlayers, // Use recovered players instead of empty array
+      },
+      gameStatus: savedStatus,
+      teamAssignments: savedTeamAssignments,
+      players: savedPlayers, // Return players separately
+    };
+  } catch (error) {
+    console.error("[GameStore] Error fetching room state:", error);
+    return null;
+  }
+};
