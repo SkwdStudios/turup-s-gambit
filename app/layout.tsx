@@ -39,8 +39,10 @@ export default function RootLayout({
         >
           <div className="flex flex-col min-h-screen w-full">
             <Navbar />
-            <main className="flex-1 w-full mx-auto pt-24 pb-8">{children}</main>
-            <footer className="py-6 text-center text-sm text-foreground/60 border-t border-primary/10 mt-auto">
+            <main className="flex-1 max-h-screen w-full mx-auto pt-24 pb-8">
+              {children}
+            </main>
+            <footer className="py-4 text-center text-sm text-foreground/60 border-t border-primary/10 mt-auto">
               <div className="container mx-auto px-4">
                 <p className="mb-4">© {2025} Turup's Gambit Fantasy Edition</p>
                 <div className="flex justify-center gap-6">
