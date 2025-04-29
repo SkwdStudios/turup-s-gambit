@@ -6,7 +6,12 @@ config({ path: resolve(process.cwd(), ".env.local") });
 
 console.log("Environment Variables:");
 console.log("DATABASE_URL:", process.env.DATABASE_URL);
-console.log("AUTH_DISCORD_ID:", process.env.AUTH_DISCORD_ID);
-console.log("AUTH_DISCORD_SECRET:", process.env.AUTH_DISCORD_SECRET);
-console.log("NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
-console.log("NEXTAUTH_SECRET:", process.env.NEXTAUTH_SECRET);
+console.log("NEXT_PUBLIC_SUPABASE_URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+console.log(
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY:",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+console.log(
+  "SUPABASE_SERVICE_ROLE_KEY:",
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);

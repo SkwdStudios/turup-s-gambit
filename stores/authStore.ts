@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { signOut } from "next-auth/react";
 import { User } from "@/app/types/user";
-import { supabaseAuth } from "@/lib/supabase-auth";
+import { supabaseAuth, signOut as supabaseSignOut } from "@/lib/supabase-auth";
 
 interface AuthState {
   user: User | null;
@@ -169,11 +168,8 @@ export const useAuthStore = create<AuthState>()(
 
         // Otherwise, sign out from auth providers
         try {
-          // Sign out from next-auth
-          await signOut({ redirect: false });
-
           // Sign out from Supabase
-          await supabaseAuth.auth.signOut();
+          await supabaseSignOut();
 
           set({
             user: null,
