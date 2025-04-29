@@ -75,29 +75,21 @@ The game follows a structured flow with distinct phases:
      - Trajectory calculations
      - Collision detection and handling
 
-5. **Trump Bidding (trump-bidding.tsx)**
-
-   - Simplified trump suit selection interface
-   - Visual indicators for selected trump
-   - Animation effects for trump reveal
-   - Validation of trump selection rules
-   - Used during the bidding phase after trump selection
-
-6. **Game Mode Selector (game-mode-selector.tsx)**
+5. **Game Mode Selector (game-mode-selector.tsx)**
 
    - Mode selection interface
    - Mode-specific rule explanations
    - Player count validation
    - Mode transition animations
 
-7. **Turn Timer (turn-timer.tsx)**
+6. **Turn Timer (turn-timer.tsx)**
 
    - Configurable turn duration
    - Visual countdown display
    - Time extension handling
    - Turn timeout actions
 
-8. **Replay Summary (replay-summary.tsx)**
+7. **Replay Summary (replay-summary.tsx)**
    - Game replay visualization
    - Player statistics display
    - Move-by-move analysis
@@ -160,10 +152,21 @@ The game follows a structured flow with distinct phases:
    - Loading states
 
 6. **Visual Effects (visual-effects.tsx)**
+
    - Particle effects
    - Screen transitions
    - Highlight effects
    - Performance optimization
+
+7. **Loading Skeletons**:
+   - **game-board-skeleton.tsx**
+   - **waiting-room-skeleton.tsx**
+   - **game-controls-skeleton.tsx**
+   - **game-info-skeleton.tsx**
+   - **player-skeleton.tsx**
+   - Provides smooth loading experiences
+   - Maintains UI layout during data fetching
+   - Improves perceived performance
 
 ### Store Management
 
@@ -209,10 +212,17 @@ The game follows a structured flow with distinct phases:
    - Game phase transitions
 
 3. **use-music-player**
+
    - Audio playback control
    - Playlist management
    - Volume state
    - Audio effects
+
+4. **use-supabase-realtime**
+   - WebSocket connection management
+   - Realtime message handling
+   - Reconnection logic
+   - Message queuing for reliability
 
 ## Tech Stack Details
 
@@ -247,279 +257,95 @@ The game follows a structured flow with distinct phases:
   - Animation classes
   - Dark mode support
 
-- **Radix UI**
-
-  - Accessible components
-  - Unstyled primitives
-  - Custom styling
-  - Component composition
-
-- **Shadcn/ui**
-  - Pre-built components
+- **Radix UI / Shadcn UI**
+  - Accessible component primitives
+  - Headless UI components
+  - Composable patterns
   - Theme integration
-  - Component variants
-  - Customization options
 
 ### State Management
 
 - **Zustand**
-
-  - Lightweight state management
-  - Persistent storage with middleware
-  - DevTools integration
-  - Atomic state updates
-  - Module-based store organization
-
-- **React Context**
-
-  - Global state management
-  - Performance optimization
-  - State updates
-  - Context providers
-
-- **Custom Hooks**
-  - Reusable logic
-  - State abstraction
-  - Side effects
-  - Performance optimization
-
-### Real-time Features
-
-- **Supabase Realtime**
-  - WebSocket connection management
-  - Broadcast capabilities
-  - Presence for player status
-  - Connection recovery
-  - Message handling
-
-### Form Handling
-
-- **React Hook Form**
-
-  - Form validation
-  - Error handling
-  - Form state
-  - Performance optimization
-
-- **Zod**
-  - Schema validation
-  - Type inference
-  - Error messages
-  - Custom validators
-
-### Animation and Effects
-
-- **Framer Motion**
-  - Component animations
-  - Gesture handling
-  - Animation orchestration
-  - Performance optimization
-
-### Additional Libraries
-
-- **date-fns** - Date formatting and manipulation
-- **Recharts** - Data visualization
-- **Sonner** - Toast notifications
-- **Embla Carousel** - Slider components
-- **Vaul** - Drawer components
-- **React Resizable Panels** - Layout management
-
-## Directory Structure
-
-```
-app/
-  about/ - Static about page
-  game/
-    [roomId]/ - Dynamic game room routes
-      page.tsx - Game room implementation with phase handling
-  login/ - Authentication pages
-  privacy-policy/ - Legal documentation
-  profile/ - User profile management
-  reset-password/ - Password recovery flow
-components/
-  game-board.tsx - Main game layout
-  bidding-panel.tsx - Bid interface
-  card.tsx - Card rendering
-  card-shuffle-animation.tsx - Shuffle effects
-  floating-cards.tsx - Floating card animations
-  flying-cards.tsx - Card movement animations
-  trump-selection-popup.tsx - Trump suit selection modal
-  game-mode-selector.tsx - Game mode selection
-  turn-timer.tsx - Turn timing system
-  replay-summary.tsx - Game replay interface
-  chat.tsx - In-game messaging
-  emoji-display.tsx - Emoji rendering
-  emoji-reactions.tsx - Reaction system
-  in-game-emotes.tsx - Game emotes
-  audio-player.tsx - Music controls
-  music-controls.tsx - Audio interface
-  navbar.tsx - Navigation bar
-  login-modal.tsx - Authentication UI
-  theme-provider.tsx - Theme management
-  visual-effects.tsx - Visual effects
-  ui/ - Reusable UI components
-    (shadcn/ui components)
-stores/
-  gameStore.ts - Game state management
-  uiStore.ts - UI state management
-  authStore.ts - Authentication state
-hooks/
-  use-auth.tsx - Auth state management
-  use-game-state.tsx - Game logic
-  use-music-player.tsx - Audio controls
-lib/
-  db.ts - Database utilities
-  utils.ts - Helper functions
-  supabase.ts - Supabase client configuration
-public/
-  assets/ - Game assets
-    (game assets)
-```
-
-## Key Features
-
-### Real-time Multiplayer
-
-- Supabase Realtime for WebSocket communication
-- Player presence detection
-- Game state replication
-- Trump voting synchronization across players
-- Connection recovery with API fallback
-- Optimized message delivery
-
-### Game Phase Transitions
-
-- Clearly defined game phases (waiting, initial_deal, bidding, final_deal, playing, ended)
-- Smooth transitions between phases
-- Phase-specific UI components
-- State persistence during phase changes
-- Timeout mechanisms for phase progression
-
-### Rich Animations
-
-- Card movement physics
-- Shuffling effects
-- Visual feedback
-- Performance optimization
-- Animation coordination
-
-### Social Features
-
-- Real-time chat
-- Emoji reactions
-- Player avatars
-- Presence indicators
-- Social interactions
-
-### Audio System
-
-- Background music
-- Sound effects
-- Volume control
-- Audio state persistence
-- Performance optimization
-
-### Game Modes
-
-- Multiple rule sets
-- Mode-specific UI
-- Rule validation
-- Mode transitions
-- Player count management
-
-### Replay System
-
-- Game recording
-- Move playback
-- Statistics tracking
-- Analysis tools
-- Export functionality
-
-### Responsive Design
-
-- Mobile-first approach
-- Adaptive layouts
-- Touch interactions
-- Performance optimization
-- Cross-device testing
-
-### Theme Support
-
-- Dark/light modes
-- Custom themes
-- Theme transitions
-- System preference detection
-- Theme persistence
-
-## Data Flow
-
-### Game State Management
-
-1. Game initialization in waiting room
-2. Transition to initial_deal phase with 5 cards
-3. Trump selection popup appears for all players
-4. Player votes are synchronized and trump is determined
-5. Transition to bidding phase
-6. Final 8 cards are dealt in final_deal phase
-7. Main gameplay occurs in playing phase
-8. Game concludes in ended phase with score tallying
+  - Simple, fast state management
+  - Middleware support
+  - Immutable updates
+  - Devtools integration
 
 ### Real-time Communication
 
-1. WebSocket connection through Supabase Realtime
-2. Direct client-to-client messaging for non-critical operations
-3. API-based messaging for critical game state changes
-4. State synchronization with optimistic updates
-5. Connection recovery with message queuing
+- **Supabase Realtime**
+  - WebSocket-based communication
+  - Broadcast channels for game events
+  - Presence for player status
+  - Channel caching for performance
 
-### Audio and Visual Effects
+### Authentication
 
-1. Effect triggers
-2. Animation coordination
-3. Performance optimization
-4. State management
-5. Cleanup handling
+- **Supabase Auth**
+  - Email/password authentication
+  - OAuth providers
+  - JWT token management
+  - User profiles
 
-## Assets Management
+### Database
 
-- Audio files (MP3, WAV)
-- Card images (SVG, PNG)
-- User avatars (WebP)
-- Emoji sets (SVG)
-- Game logo (SVG)
-- Branding elements (SVG, PNG)
+- **Supabase PostgreSQL**
+  - Relational data model
+  - Real-time subscriptions
+  - Row-level security
+  - Stored procedures
 
-## Performance Optimization
+## Testing & Development
 
-- Code splitting
-- Lazy loading
-- Image optimization
-- Animation performance
-- Zustand for efficient state updates
-- Memory management
+- **Testing Framework**
 
-## Security Considerations
+  - Jest for unit testing
+  - Cypress for E2E testing
+  - MSW for service mocking
+  - Realtime testing utilities
 
-- Authentication through Supabase Auth
-- Authorization for game actions
-- Data validation
-- Input sanitization
-- Error handling
-- Secure communication
-
-## Testing Strategy
-
-- Unit tests
-- Component tests
-- Integration tests
-- E2E tests
-- Performance tests
-- Accessibility tests
+- **Development Tools**
+  - ESLint for code quality
+  - Prettier for formatting
+  - Husky for git hooks
+  - TypeScript for type checking
 
 ## Deployment
 
-- Vercel hosting
-- CI/CD pipeline
-- Environment configuration
-- Build optimization
-- Monitoring setup
+- **CI/CD**
+
+  - GitHub Actions
+  - Vercel integration
+  - Preview deployments
+  - Environment variable management
+
+- **Monitoring**
+  - Error logging
+  - Performance metrics
+  - Usage analytics
+  - Uptime monitoring
+
+## Future Roadmap
+
+1. **Enhanced Social Features**
+
+   - Friends list
+   - Private messaging
+   - Achievements
+
+2. **Advanced Game Modes**
+
+   - Tournament support
+   - Custom rule creation
+   - Spectator mode
+
+3. **Mobile App**
+
+   - Native mobile experience
+   - Push notifications
+   - Offline support
+
+4. **AI Improvements**
+   - Advanced bot strategies
+   - Machine learning integration
+   - Skill-based matching

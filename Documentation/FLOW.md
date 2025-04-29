@@ -1,8 +1,10 @@
-# Turup's Gambit - Classic Mode (Court Piece Style)
+# Turup's Gambit - Game Flow Documentation
 
-## Overview
+## Classic Mode (Court Piece Style)
 
-This is a detailed game flow for Turup's Gambit Classic Mode, based on the traditional Court Piece - 5-Card Trump Calling Version. The game is played by four players in teams of two, using a standard 52-card deck.
+### Overview
+
+This is a detailed game flow for Turup's Gambit Classic Mode, based on the traditional Court Piece (also known as Court Piece, Hokm, or Rung). The game is played by four players in teams of two, using a standard 52-card deck.
 
 ---
 
@@ -10,13 +12,14 @@ This is a detailed game flow for Turup's Gambit Classic Mode, based on the tradi
 
 - **Total Players**: 4
 - **Team Formation**: 2 teams of 2 players each
-- **Seating Arrangement**: Teammates sit opposite each other in a square setup
+- **Seating Arrangement**: Teammates sit opposite each other in a cross setup
 
 ---
 
 ## 2. Deck
 
 - Standard **52-card deck** (no jokers)
+- Card ranks from high to low: A, K, Q, J, 10, 9, 8, 7, 6, 5, 4, 3, 2
 
 ---
 
@@ -29,65 +32,151 @@ This is a detailed game flow for Turup's Gambit Classic Mode, based on the tradi
 
 ---
 
-## 4. Setup and Dealing
+## 4. Game Setup and Flow
 
-1. A **dealer** is chosen (either randomly or by rotation)
-2. Dealer deals **5 cards** to each player in a **clockwise direction**
-3. The player to the dealer's left becomes the **Trump Caller**
-4. Trump Caller reviews their 5 cards and selects a **trump suit** (called **Hukam** or **Rang**)
-   - E.g., if they have 3 hearts, they may declare **Hearts** as trump
-5. Once trump is declared, the dealer deals the **remaining 8 cards** to each player
-   - Each player now has **13 cards total**
+### 4.1 Waiting Room
+
+- Players join the game room
+- Host can start the game when 4 players have joined
+- Bots can be added to fill empty slots
+- Teams are automatically assigned
+
+### 4.2 Initial Deal Phase
+
+- Dealer deals **5 cards** to each player in a clockwise direction
+- Players review their initial hand
+
+### 4.3 Trump Selection Phase
+
+- All players vote for their preferred trump suit based on their initial 5 cards
+- Players can see the number of cards they have in each suit
+- The system tallies votes and determines the final trump suit
+- If tied, a random selection is made from the tied suits
+- The host can force bots to vote
+
+### 4.4 Bidding Phase
+
+- Players place bids on how many tricks they think their team will win
+- Minimum bid is 7 (required to win)
+- Maximum bid is 13 (all tricks)
+- Players can see other players' bids
+- Bidding proceeds in a clockwise direction
+
+### 4.5 Final Deal Phase
+
+- After bidding is complete, the remaining **8 cards** are dealt to each player
+- Each player now has **13 cards total**
+
+### 4.6 Playing Phase
+
+- The highest bidder leads the first trick
+- Play proceeds clockwise
+- Players must follow the suit of the leading card if possible
+- If a player cannot follow suit, they may play any card including trumps
+- Trump cards beat all non-trump cards
+- The highest card of the led suit wins unless a trump is played
+- The winner of a trick leads the next trick
+
+### 4.7 Game End
+
+- Game ends when one team wins 7 tricks or all 13 tricks have been played
+- Winning 7+ tricks grants a baazi to that team
+- Winning all 13 tricks grants a kot (grand baazi)
+- Score is calculated based on the number of tricks won
+- Players can view a game summary and replay
 
 ---
 
-## 5. Gameplay Flow
+## 5. Card Play Rules
 
-### Trick Rounds:
+### 5.1 Following Suit
 
-1. The **Trump Caller** leads the **first trick**
-2. Play proceeds **clockwise**
-3. Each player plays one card per trick
+- **Mandatory**: Players must follow the led suit if they have cards of that suit
+- **Exception**: If a player has no cards of the led suit, they may play any card
 
-### Trick Rules:
+### 5.2 Trick Winner Determination
 
-- Players must **follow the suit** of the leading card if they have it
-- If a player **cannot follow suit**, they may play any other card:
-  - **Trump cards beat** all non-trump cards
-  - If **multiple trumps** are played, the **highest trump wins**
-  - If **no trump** is played, the **highest card of the led suit** wins
+1. If no trumps are played, the highest card of the led suit wins
+2. If trumps are played, the highest trump card wins regardless of other cards
+3. In case of identical ranks, the first one played wins
 
-### Trick Outcome:
+### 5.3 Card Hierarchy
 
-- The **winner of the trick** leads the next trick
+- **Within Trump Suit**: A (high) → 2 (low)
+- **Within Non-Trump Suits**: A (high) → 2 (low)
 
 ---
 
-## 6. Scoring & Round End
+## 6. Frenzy Mode
 
-### Baazi:
+### Overview
 
-- The round ends as soon as a team wins **7 tricks**
-- They earn **1 baazi** (standard win)
+Frenzy Mode adds excitement with special rules and faster gameplay:
 
-### Kot / Grand Baazi:
-
-- If a team wins **all 13 tricks**, they score a **kot**
-- Kot is typically worth **extra points** or higher ranking in match play
-
-### Match Progression:
-
-- Multiple baazis can be accumulated to track a full match (e.g., first to 5 baazis wins)
+- **Bidding**: No bidding phase
+- **Trump Selection**: Randomly assigned trump suit
+- **Turn Timer**: Shorter turn timer (15 seconds)
+- **Special Powers**: Each suit grants a special power when used as trump
+  - Hearts: Extra point for each heart trick
+  - Spades: Can lead with any card after winning a trick
+  - Diamonds: See one opponent's card
+  - Clubs: One card can be played out of turn
 
 ---
 
-## 7. Strategic Layers
+## 7. UI/UX Flow
 
-- **Trump declaration** adds risk-reward decision making
-- **Team synergy** and memory play a big role in predicting card distributions and opponent strategy
+### 7.1 Game Board Layout
+
+- Central play area shows cards in play
+- Player hands are displayed at their respective positions
+- Trump suit indicator is prominently displayed
+- Current trick count and score are always visible
+- Turn indicator shows whose turn it is
+- Timer shows remaining time for the current turn
+
+### 7.2 Special Indicators
+
+- Current player highlight
+- Valid card highlighting
+- Trump card highlighting
+- Trick winner animation
+- Game phase transition animations
+
+### 7.3 Interactive Elements
+
+- Clickable cards in hand
+- Trump selection interface
+- Bidding interface
+- Chat and emoji reactions
+- Game controls (settings, exit, etc.)
+
+---
+
+## 8. Game Progression Sequence
+
+1. **Pre-Game**: Room creation, player joining, team assignment
+2. **Game Start**: Initial deal of 5 cards
+3. **Trump Selection**: All players vote on trump suit
+4. **Bidding**: Players bid on number of tricks
+5. **Final Deal**: Remaining 8 cards dealt
+6. **Gameplay**: 13 tricks played in sequence
+7. **Scoring**: Points calculated based on tricks won
+8. **End Game**: Results displayed, option to play again or return to lobby
+
+---
+
+## 9. Strategic Elements
+
+- **Trump Management**: Strategic use of trump cards
+- **Card Counting**: Tracking played cards
+- **Team Signaling**: Implicit communication through card play
+- **Trick Planning**: Multi-trick strategy
+- **Trump Conservation**: Saving trump cards for critical moments
+- **Suit Control**: Maintaining control of non-trump suits
 
 ---
 
 ## Summary
 
-Turup's Gambit Classic Mode is a strategic trick-taking game focused on coordination, memory, and careful timing. Its roots in traditional Court Piece give it deep cultural familiarity while offering competitive and dynamic gameplay for modern players
+Turup's Gambit provides an engaging digital implementation of the classic Court Piece card game with enhanced visual effects, social features, and multiple game modes. The game balances traditional gameplay with modern digital features for an optimal gaming experience.

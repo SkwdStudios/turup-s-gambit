@@ -2,12 +2,12 @@
 
 ## Overview
 
-This project uses Supabase as the database provider with Prisma as the ORM. The database schema is designed to support the game's core features including user management, game sessions, and replay functionality.
+This project uses Supabase as the database provider with PostgreSQL as the underlying database engine. The database schema is designed to support the game's core features including user management, game sessions, and replay functionality.
 
 ## Prerequisites
 
 1. A Supabase account and project
-2. Node.js 16.x or later
+2. Node.js 18.x or later
 3. pnpm package manager
 
 ## Setup Steps
@@ -17,9 +17,9 @@ This project uses Supabase as the database provider with Prisma as the ORM. The 
 Copy `.env.example` to `.env` and fill in your Supabase credentials:
 
 ```env
-DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres"
-NEXT_PUBLIC_SUPABASE_URL=https://bfzhqhktuyxlzhdymwwl.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJmemhxaGt0dXl4bHpoZHltd3dsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3ODIzOTgsImV4cCI6MjA1OTM1ODM5OH0.ccu8lO6UKUdGn1RPqMp5zmSC4E_9J3clBXsyJzpC1iE
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 ### 2. Install Dependencies
@@ -47,6 +47,7 @@ pnpm prisma generate
 - Stores user information and authentication details
 - Supports both anonymous and registered users
 - Links to game participation through Player model
+- Tracks user statistics and preferences
 
 ### Game Model
 
@@ -63,6 +64,7 @@ pnpm prisma generate
 - Enables many-to-many relationship between users and games
 - Stores player's card hand
 - Records trump suit votes
+- Tracks bidding history
 
 ### GameSession Model
 
@@ -86,6 +88,20 @@ pnpm prisma generate
 - Records timestamp of votes
 - Allows for analysis of voting patterns
 
+### Card Model
+
+- Represents individual cards in the deck
+- Tracks card suit, value, and ownership
+- Records play history and trick association
+- Used for game state reconstruction
+
+### Trick Model
+
+- Represents a single trick in the game
+- Tracks cards played in the trick
+- Records winner and point value
+- Links to game session
+
 ## Realtime Data Storage
 
 The application uses Supabase Realtime for synchronizing game state between players:
@@ -94,6 +110,15 @@ The application uses Supabase Realtime for synchronizing game state between play
 - Trump selection votes are recorded in real-time
 - Player actions are synchronized through the database and Supabase Realtime
 - Game phase transitions are managed through database triggers
+
+## Database Functions and Triggers
+
+Several PostgreSQL functions and triggers ensure game integrity:
+
+- `on_trump_vote`: Trigger that updates game state when a trump vote is cast
+- `on_card_play`: Trigger that validates card play and updates game state
+- `on_game_end`: Trigger that calculates final scores and updates player statistics
+- `get_valid_moves`: Function that returns valid card plays for a player
 
 ## Development Tools
 
@@ -105,6 +130,14 @@ To view and edit data during development:
 pnpm db:studio
 ```
 
+### Database Migrations
+
+To create a new migration after schema changes:
+
+```bash
+pnpm prisma migrate dev --name your-migration-name
+```
+
 ## Production Deployment
 
 1. Ensure environment variables are properly set in your deployment platform
@@ -114,6 +147,26 @@ pnpm db:studio
 pnpm prisma generate
 pnpm db:push
 ```
+
+## Security Considerations
+
+- Row-level security policies restrict access to user data
+- Authentication tokens are required for database access
+- Validation is performed on both client and server
+- Sensitive operations require server-side verification
+
+## Performance Optimization
+
+- Indexes are created on frequently queried fields
+- Query optimization for common game operations
+- Connection pooling for efficient database access
+- Caching strategies for frequently accessed data
+
+## Backup and Recovery
+
+- Regular database backups through Supabase
+- Point-in-time recovery options
+- Game state snapshots for resilience
 
 ## Notes
 
