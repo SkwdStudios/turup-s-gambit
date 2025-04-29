@@ -1,0 +1,45 @@
+---
+description: Project Structure Guide
+globs:
+alwaysApply: false
+---
+# Project Structure Guide
+
+This project follows the Next.js App Router pattern with a modular directory structure:
+
+- [app/](mdc:app)
+  - [app/layout.tsx](mdc:app/layout.tsx): Root layout with global providers, metadata, and styles.
+  - [app/page.tsx](mdc:app/page.tsx): Home page entry point.
+  - [app/api/](mdc:app/api): Next.js API route handlers.
+
+- [components/](mdc:components): Reusable React UI components written in TypeScript using Tailwind CSS.
+
+- [hooks/](mdc:hooks): Custom React hooks for shared stateful logic.
+
+- [lib/](mdc:lib): Data fetching helpers and general utilities.
+
+- [utils/](mdc:utils): Generic helper functions and utilities.
+
+- [stores/](mdc:stores): State management stores (e.g., Zustand, Jotai).
+
+- [styles/](mdc:styles): Global CSS and style definitions.
+
+- [public/](mdc:public): Static assets such as images, icons, and fonts.
+
+- [supabase/](mdc:supabase): Supabase client setup and configurations.
+
+- [prisma/](mdc:prisma): Prisma schema, migrations, and client setup.
+
+# Configuration Files
+
+- [package.json](mdc:package.json): Project metadata, scripts, and dependencies.
+- [pnpm-lock.yaml](mdc:pnpm-lock.yaml): Lockfile for package versions.
+- [tsconfig.json](mdc:tsconfig.json): TypeScript compiler options.
+- [tailwind.config.ts](mdc:tailwind.config.ts): Tailwind CSS customization.
+- [postcss.config.mjs](mdc:postcss.config.mjs): PostCSS configuration.
+- [next.config.mjs](mdc:next.config.mjs): Next.js framework settings.
+- [next-env.d.ts](mdc:next-env.d.ts): Next.js environment type definitions.
+- [middleware.ts](mdc:middleware.ts): Global middleware for routing and authentication.
+- [README.md](mdc:README.md): Project overview and setup instructions.
+
+
