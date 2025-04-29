@@ -70,10 +70,12 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
   h1,
   h2,
   h3,
@@ -82,18 +84,22 @@
   h6 {
     @apply font-medieval;
   }
+
   main {
-    @apply pt-24; /* Add extra spacing below navbar */
+    @apply pt-24;
+    /* Add extra spacing below navbar */
   }
 }
 
 @layer components {
+
   /* Adjust the fantasy card styling */
   .fantasy-card {
     @apply relative rounded-lg overflow-hidden border-2 border-primary/50 shadow-lg;
     background-image: linear-gradient(to bottom right, #3a2a18, #1a1208);
     position: relative;
-    transform: scale(1.05); /* Slightly increase card size */
+    transform: scale(1.05);
+    /* Slightly increase card size */
   }
 
   .fantasy-card::before {
@@ -104,7 +110,28 @@
     z-index: 1;
   }
 
-  .fantasy-card > * {
+  .fantasy-card>* {
+    position: relative;
+    z-index: 2;
+  }
+
+  .fantasy-card-home {
+    @apply relative rounded-lg overflow-hidden border-2 border-primary/50 shadow-lg;
+    background-image: linear-gradient(to bottom right, #b1a62a, #6b700b);
+    position: relative;
+    transform: scale(1.05);
+    /* Slightly increase card size */
+  }
+
+  .fantasy-card-home::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(45deg, rgba(102, 255, 0, 0.363), transparent 60%);
+    z-index: 1;
+  }
+
+  .fantasy-card-home>* {
     position: relative;
     z-index: 2;
   }
@@ -123,7 +150,8 @@
     height: 100%;
     background-image: url("/assets/button-texture.png");
     background-size: contain;
-    opacity: 0.1; /* Very low opacity */
+    opacity: 0.1;
+    /* Very low opacity */
     z-index: 0;
     pointer-events: none;
   }
@@ -138,7 +166,7 @@
     @apply opacity-100;
   }
 
-  .medieval-button > * {
+  .medieval-button>* {
     position: relative;
     z-index: 2;
   }
@@ -164,41 +192,52 @@
     height: 100vh;
     width: 100vw;
     pointer-events: none;
-    opacity: 0.03; /* Reduced opacity */
+    opacity: 0.03;
+    /* Reduced opacity */
     z-index: 100;
     background-image: url("/assets/grain.png");
     animation: grain 8s steps(10) infinite;
   }
 
   @keyframes grain {
+
     0%,
     100% {
       transform: translate(0, 0);
     }
+
     10% {
       transform: translate(-5%, -5%);
     }
+
     20% {
       transform: translate(-10%, 5%);
     }
+
     30% {
       transform: translate(5%, -10%);
     }
+
     40% {
       transform: translate(-5%, 15%);
     }
+
     50% {
       transform: translate(-10%, 5%);
     }
+
     60% {
       transform: translate(15%, 0%);
     }
+
     70% {
       transform: translate(0%, 10%);
     }
+
     80% {
       transform: translate(-15%, 0%);
     }
+
     90% {
       transform: translate(10%, 5%);
     }
@@ -213,75 +252,100 @@
     width: 100vw;
     pointer-events: none;
     z-index: 101;
-    background: linear-gradient(
-      rgba(18, 16, 16, 0) 50%,
-      rgba(0, 0, 0, 0.15) 50%
-    ); /* Reduced opacity from 0.25 to 0.15 */
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%,
+        rgba(0, 0, 0, 0.15) 50%);
+    /* Reduced opacity from 0.25 to 0.15 */
     background-size: 100% 4px;
-    animation: crt-flicker 0.3s infinite; /* Slowed down from 0.15s to 0.3s */
+    animation: crt-flicker 0.3s infinite;
+    /* Slowed down from 0.15s to 0.3s */
   }
 
   @keyframes crt-flicker {
     0% {
-      opacity: 0.08; /* Reduced flicker intensity */
+      opacity: 0.08;
+      /* Reduced flicker intensity */
     }
+
     5% {
       opacity: 0.12;
     }
+
     10% {
       opacity: 0.06;
     }
+
     15% {
-      opacity: 0.35; /* Reduced from 0.70626 */
+      opacity: 0.35;
+      /* Reduced from 0.70626 */
     }
+
     20% {
       opacity: 0.09;
     }
+
     25% {
-      opacity: 0.3; /* Reduced from 0.63891 */
+      opacity: 0.3;
+      /* Reduced from 0.63891 */
     }
+
     30% {
       opacity: 0.22;
     }
+
     35% {
       opacity: 0.23;
     }
+
     40% {
       opacity: 0.13;
     }
+
     45% {
-      opacity: 0.32; /* Reduced from 0.64693 */
+      opacity: 0.32;
+      /* Reduced from 0.64693 */
     }
+
     50% {
-      opacity: 0.38; /* Reduced from 0.76019 */
+      opacity: 0.38;
+      /* Reduced from 0.76019 */
     }
+
     55% {
       opacity: 0.04;
     }
+
     60% {
       opacity: 0.1;
     }
+
     65% {
       opacity: 0.25;
     }
+
     70% {
       opacity: 0.21;
     }
+
     75% {
       opacity: 0.18;
     }
+
     80% {
       opacity: 0.25;
     }
+
     85% {
       opacity: 0.25;
     }
+
     90% {
       opacity: 0.25;
     }
+
     95% {
       opacity: 0.18;
     }
+
     100% {
       opacity: 0.12;
     }
@@ -289,10 +353,12 @@
 
   /* Floating card animations */
   @keyframes float {
+
     0%,
     100% {
       transform: translateY(0) rotate(0deg);
     }
+
     50% {
       transform: translateY(-20px) rotate(5deg);
     }
@@ -313,13 +379,16 @@
       opacity: 0;
       transform: translateY(10px);
     }
+
     10% {
       opacity: 1;
       transform: translateY(0);
     }
+
     90% {
       opacity: 1;
     }
+
     100% {
       opacity: 0;
       transform: translateY(-10px);

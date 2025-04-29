@@ -5,7 +5,12 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Info, Menu, X, Music, User } from "lucide-react";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { useAuthStore } from "@/stores/authStore";
 import { MusicControls } from "@/components/music-controls";
 import { AuthButton } from "@/components/auth-button";
@@ -105,6 +110,7 @@ export function Navbar() {
                 </Button>
               </SheetTrigger>
               <SheetContent className="bg-card/95 backdrop-blur-md border-primary/20 p-6">
+                <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
                 <motion.div
                   className="flex flex-col gap-6 mt-8"
                   initial={{ opacity: 0, x: 20 }}

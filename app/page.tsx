@@ -9,7 +9,7 @@ import Image from "next/image";
 
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-16 pb-16">
+    <div className="relative h-full flex flex-col items-center justify-center overflow-hidden pt-16 pb-16">
       <VisualEffects enableGrain enableCRT />
       <FlyingCards />
 
@@ -58,6 +58,46 @@ export default function HomePage() {
             </Button>
           </Link>
         </motion.div>
+      </div>
+      <div className="">
+        <div className="flex gap-4 items-center">
+          <div className="w-16 h-16 relative">
+            <div className="fantasy-card-home w-full h-full absolute animate-[float_3s_ease-in-out_infinite] bg-white dark:bg-slate-200">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-3xl text-slate-900 dark:text-white">
+                  ♥
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="w-16 h-16 relative">
+            <div className="fantasy-card-home w-full h-full absolute animate-[float_4s_ease-in-out_infinite_0.5s] bg-white dark:bg-slate-200">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-3xl text-slate-900 dark:text-white">
+                  ♦
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="w-16 h-16 relative">
+            <div className="fantasy-card-home w-full h-full absolute animate-[float_3.5s_ease-in-out_infinite_1s] bg-white dark:bg-slate-200">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-3xl text-slate-900 dark:text-white">
+                  ♠
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="w-16 h-16 relative">
+            <div className="fantasy-card-home w-full h-full absolute animate-[float_4.5s_ease-in-out_infinite_1.5s] bg-white dark:bg-slate-200">
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-3xl text-slate-900 dark:text-white">
+                  ♣
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="absolute inset-0 -z-10">
