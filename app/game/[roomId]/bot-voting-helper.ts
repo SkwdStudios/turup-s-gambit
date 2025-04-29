@@ -5,7 +5,7 @@ import {
   isUIReadyState,
   executeWhenUIReady,
 } from "@/lib/game-flow-manager";
-import { useGameStore } from "@/stores/gameStore";
+import { useGameStore } from "@/stores";
 import { useUIStore } from "@/stores/uiStore";
 
 // Type definition for message sending function
@@ -244,7 +244,7 @@ export function forceAllBotsToVote(
   console.log(`[Bot Voting] Players who have already voted:`, playersVoted);
 
   const botsToVote = botPlayers.filter(
-    (bot) => !playersVoted.includes(bot.id) && !globalBotVotes[bot.id]
+    (bot: Bot) => !playersVoted.includes(bot.id) && !globalBotVotes[bot.id]
   );
 
   if (botsToVote.length === 0) {
@@ -262,7 +262,7 @@ export function forceAllBotsToVote(
   const suits = ["hearts", "diamonds", "clubs", "spades"];
 
   // Make bots vote one at a time with a delay between each to prevent race conditions
-  botsToVote.forEach((bot, index) => {
+  botsToVote.forEach((bot: Bot, index: number) => {
     setTimeout(() => {
       // Double-check if the game is still in initial_deal phase
       if (currentRoom.gameState.gamePhase !== "initial_deal") {

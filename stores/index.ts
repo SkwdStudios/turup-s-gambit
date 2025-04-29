@@ -1,4 +1,4 @@
 export { useAuthStore } from "./authStore";
-export { useGameStore } from "./gameStore";
+export * from "./gameStore/index";
 export { useUIStore } from "./uiStore";
 export { useSettingsStore } from "./settingsStore";

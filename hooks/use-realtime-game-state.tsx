@@ -1,6 +1,6 @@
 "use client";
 
-import { useGameStore } from "@/stores/gameStore";
+import { useGameStore } from "@/stores";
 import { GameRoom, GameState } from "@/app/types/game";
 import { BroadcastMessage } from "@/app/types/game";
 
@@ -20,9 +20,9 @@ export function useRealtimeGameState() {
     playCard,
     placeBid,
     selectTrump,
-    sendMessage
+    sendMessage,
   } = useGameStore();
-  
+
   return {
     currentRoom,
     players,
@@ -34,7 +34,7 @@ export function useRealtimeGameState() {
     playCard,
     placeBid,
     selectTrump,
-    sendMessage
+    sendMessage,
   };
 }
 
@@ -51,11 +51,11 @@ export function RealtimeGameStateProvider({
 }) {
   // Initialize the game with the room ID
   const { setRoomId } = useGameStore();
-  
+
   // Set the room ID
   if (roomId) {
     setRoomId(roomId);
   }
-  
+
   return <>{children}</>;
 }

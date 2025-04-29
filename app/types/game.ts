@@ -92,3 +92,9 @@ export interface ClientToServerEvents {
   "game:play-card": (roomId: string, card: Card) => void;
   "game:select-trump": (roomId: string, suit: Suit) => void;
 }
+
+export interface BroadcastMessage {
+  type: string;
+  event: string;
+  payload: any;
+}

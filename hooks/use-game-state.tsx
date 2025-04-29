@@ -1,6 +1,6 @@
 "use client";
 
-import { useGameStore } from "@/stores/gameStore";
+import { useGameStore } from "@/stores";
 import { GameState } from "@/app/types/game";
 
 /**
@@ -22,18 +22,19 @@ export function useGameState(mode: "classic" | "frenzy") {
 
   // Construct a gameState object from the store values
   const gameState: GameState = {
+    currentTurn: currentPlayer,
     trumpSuit,
-    currentTrick,
+    trickCards: {},
+    currentBid: 0,
+    currentBidder: null,
+    roundNumber: 1,
+    gamePhase: "waiting",
     scores,
-    currentPlayer,
-    gameMode: mode,
-    specialPowers:
-      mode === "frenzy"
-        ? {
-            doubleTrump: true,
-            swapCard: true,
-          }
-        : undefined,
+    teams: { royals: [], rebels: [] },
+    consecutiveTricks: { royals: 0, rebels: 0 },
+    lastTrickWinner: null,
+    dealerIndex: 0,
+    trumpCaller: null,
   };
 
   return {

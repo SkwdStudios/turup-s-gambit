@@ -6,7 +6,7 @@ import { InGameEmotes } from "@/components/in-game-emotes";
 import { type Card as CardType, type Player } from "@/app/types/game";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { motion, AnimatePresence } from "framer-motion";
-import { useGameStore } from "@/stores/gameStore";
+import { useGameStore } from "@/stores";
 import { useUIStore } from "@/stores/uiStore";
 import { useAuthStore } from "@/stores/authStore";
 import { persist, createJSONStorage } from "zustand/middleware";
@@ -683,7 +683,7 @@ export function GameBoard({
 
         console.log("[GameBoard] Ready for next trick - play states reset");
       }
-    }, 1000);
+    }, 500);
   }, [
     centerCards,
     scores,
@@ -1445,19 +1445,6 @@ export function GameBoard({
               {/* Emote controls */}
               <InGameEmotes onEmote={handleEmote} />
             </div>
-
-            {/* Loading overlay */}
-            {gameStatus === "final_deal" && (
-              <div className="absolute inset-0 bg-background/30 backdrop-blur-sm flex items-center justify-center">
-                <div className="bg-card/90 p-4 rounded-lg shadow-lg flex flex-col items-center">
-                  <LoadingSpinner size="lg" />
-                  <div className="mt-2 text-foreground">
-                    {gameStatus === "final_deal" &&
-                      "Dealing remaining 8 cards..."}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </>
       )}

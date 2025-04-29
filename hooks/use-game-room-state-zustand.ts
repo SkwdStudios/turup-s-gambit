@@ -1,5 +1,5 @@
 import { useParams, useSearchParams } from "next/navigation";
-import { useGameStore } from "@/stores/gameStore";
+import { useGameStore } from "@/stores";
 import { useAuthStore } from "@/stores/authStore";
 import { useUIStore } from "@/stores/uiStore";
 import { GameRoom } from "@/app/types/game";
@@ -42,7 +42,7 @@ export function useGameRoomState(): GameRoomState {
   const searchParams = useSearchParams();
   const { roomId } = useParams<{ roomId: string }>();
   const mode = searchParams?.get("mode") || "classic";
-  
+
   // Get state from stores
   const {
     currentRoom,
@@ -59,45 +59,44 @@ export function useGameRoomState(): GameRoomState {
     selectTrump,
     sendMessage,
     setStatusMessage,
-    setIsAddingBots
+    setIsAddingBots,
   } = useGameStore();
-  
+
   const { showReplay, showLoginModal } = useUIStore();
   const { user } = useAuthStore();
-  
+
   // Check if the current user is the host
-  const isCurrentUserHost = currentRoom?.players?.some(
-    (p) => p.id === user?.id && p.isHost
-  ) || false;
-  
+  const isCurrentUserHost =
+    currentRoom?.players?.some((p) => p.id === user?.id && p.isHost) || false;
+
   // Handle starting the game
   const handleStartGame = () => {
     if (isCurrentUserHost) {
       startGame();
     }
   };
-  
+
   // Handle trump voting
   const handleTrumpVote = (suit: string) => {
-    selectTrump(suit);
+    selectTrump(suit as "hearts" | "diamonds" | "clubs" | "spades");
   };
-  
+
   // Handle playing a card
   const handlePlayCard = (card: any) => {
     playCard(card);
   };
-  
+
   // Safe way to send messages
   const safeSendMessage = (message: any): boolean => {
     if (!isConnected) {
-      console.warn('[useGameRoomState] Cannot send message, not connected');
+      console.warn("[useGameRoomState] Cannot send message, not connected");
       return false;
     }
-    
+
     sendMessage(message);
     return true;
   };
-  
+
   return {
     showReplay,
     gameStatus: gameStatus as GameStatus,
@@ -108,7 +107,7 @@ export function useGameRoomState(): GameRoomState {
     isAddingBots,
     statusMessage,
     gameMode: mode as GameMode,
-    players: players.map(p => p.name),
+    players: players.map((p) => p.name),
     gameState: currentRoom,
     isCurrentUserHost,
     handleStartGame,
@@ -116,6 +115,6 @@ export function useGameRoomState(): GameRoomState {
     handlePlayCard,
     setIsAddingBots,
     setStatusMessage,
-    safeSendMessage
+    safeSendMessage,
   };
 }

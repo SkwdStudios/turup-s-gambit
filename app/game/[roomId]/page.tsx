@@ -23,19 +23,17 @@ import { WaitingRoom } from "@/components/waiting-room";
 // import { isPlayerHost } from "@/utils/game-helpers";
 
 // Import Zustand stores
-import {
-  useGameStore,
-  type GameStoreState,
-  fetchRoomStateFromSupabase,
-} from "@/stores/gameStore";
+import { useGameStore, type GameStoreState } from "@/stores";
 import { useAuthStore } from "@/stores/authStore";
 import { useUIStore } from "@/stores/uiStore";
+import { fetchRoomStateFromSupabase } from "@/stores/gameStore/persistence";
 
 // Import our new Supabase Realtime trump voting hook
 import { useSupabaseTrumpVoting } from "@/hooks/use-supabase-trump-voting";
 
 // Import useShallow for stable selectors
 import { useShallow } from "zustand/react/shallow";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
 export enum GameStates {
   WAITING = "waiting",
@@ -615,6 +613,14 @@ function GameRoomContentInner() {
         <VisualEffects enableGrain />
         <GameBackground />
         <div className="container mx-auto px-4 py-8">
+          <div className="absolute inset-0 bg-background/30 backdrop-blur-sm flex items-center justify-center">
+            <div className="bg-card/90 p-4 rounded-lg shadow-lg flex flex-col items-center">
+              <LoadingSpinner size="lg" />
+              <div className="mt-2 text-foreground">
+                {gameStatus === "final_deal" && "Dealing remaining 8 cards..."}
+              </div>
+            </div>
+          </div>
           {showShuffleAnimation && (
             <CardShuffleAnimation onComplete={handleFinalShuffleDrawComplete} />
           )}

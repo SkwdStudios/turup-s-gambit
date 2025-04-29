@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { RealtimeChannel } from "@supabase/supabase-js";
 import { Suit } from "@/app/types/game";
-import { useGameStore } from "@/stores/gameStore";
+import { useGameStore } from "@/stores";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
