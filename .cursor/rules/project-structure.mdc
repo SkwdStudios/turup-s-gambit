@@ -11,8 +11,21 @@ This project follows the Next.js App Router pattern with a modular directory str
   - [app/layout.tsx](mdc:app/layout.tsx): Root layout with global providers, metadata, and styles.
   - [app/page.tsx](mdc:app/page.tsx): Home page entry point.
   - [app/api/](mdc:app/api): Next.js API route handlers.
+  - [app/globals.css](mdc:app/globals.css): Global styles for the application.
+  - [app/not-found.tsx](mdc:app/not-found.tsx): Custom 404 page.
+  - [app/auth/](mdc:app/auth): Authentication related pages and components.
+  - [app/game/](mdc:app/game): Game related pages and functionality.
+  - [app/login/](mdc:app/login): Login page and components.
+  - [app/profile/](mdc:app/profile): User profile related pages.
+  - [app/about/](mdc:app/about): About page content.
+  - [app/privacy-policy/](mdc:app/privacy-policy): Privacy policy page.
+  - [app/reset-password/](mdc:app/reset-password): Password reset functionality.
 
 - [components/](mdc:components): Reusable React UI components written in TypeScript using Tailwind CSS.
+  - [components/ui/](mdc:components/ui): Basic UI components like buttons, forms, and dialogs.
+  - Game-specific components: card, game-board, bidding-panel, turn-timer, etc.
+  - UI skeletons for loading states.
+  - Authentication components.
 
 - [hooks/](mdc:hooks): Custom React hooks for shared stateful logic.
 
@@ -20,7 +33,7 @@ This project follows the Next.js App Router pattern with a modular directory str
 
 - [utils/](mdc:utils): Generic helper functions and utilities.
 
-- [stores/](mdc:stores): State management stores (e.g., Zustand, Jotai).
+- [stores/](mdc:stores): State management stores (using Zustand).
 
 - [styles/](mdc:styles): Global CSS and style definitions.
 
@@ -29,6 +42,19 @@ This project follows the Next.js App Router pattern with a modular directory str
 - [supabase/](mdc:supabase): Supabase client setup and configurations.
 
 - [prisma/](mdc:prisma): Prisma schema, migrations, and client setup.
+
+- [types/](mdc:types): TypeScript type definitions for the application.
+
+- [Documentation/](mdc:Documentation): Project documentation files.
+  - [Documentation/DOCUMENTATION.md](mdc:Documentation/DOCUMENTATION.md): General project documentation.
+  - [Documentation/DATABASE.md](mdc:Documentation/DATABASE.md): Database structure and design.
+  - [Documentation/REALTIME_IMPLEMENTATION.md](mdc:Documentation/REALTIME_IMPLEMENTATION.md): Realtime functionality implementation details.
+  - [Documentation/FLOW.md](mdc:Documentation/FLOW.md): Application flow documentation.
+  - [Documentation/PRD.md](mdc:Documentation/PRD.md): Product Requirements Document.
+
+- [scripts/](mdc:scripts): Utility scripts for development and testing.
+  - [scripts/verify-env.ts](mdc:scripts/verify-env.ts): Environment variable verification.
+  - [scripts/test-realtime.js](mdc:scripts/test-realtime.js): Script for testing realtime functionality.
 
 # Configuration Files
 
@@ -40,6 +66,7 @@ This project follows the Next.js App Router pattern with a modular directory str
 - [next.config.mjs](mdc:next.config.mjs): Next.js framework settings.
 - [next-env.d.ts](mdc:next-env.d.ts): Next.js environment type definitions.
 - [middleware.ts](mdc:middleware.ts): Global middleware for routing and authentication.
+- [components.json](mdc:components.json): Shadcn UI components configuration.
 - [README.md](mdc:README.md): Project overview and setup instructions.
 
 
