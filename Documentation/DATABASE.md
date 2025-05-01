@@ -28,17 +28,20 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 pnpm install
 ```
 
-### 3. Database Migration
+### 3. Database Setup
+
+Run the table creation script in Supabase SQL Editor:
 
 ```bash
-pnpm db:push
+node scripts/check-tables.js
 ```
 
-### 4. Generate Prisma Client
+If tables are missing, you can create them using the SQL file:
 
-```bash
-pnpm prisma generate
-```
+1. Log in to your Supabase dashboard
+2. Go to the SQL Editor
+3. Copy and paste the contents of `scripts/create-tables-manual.sql`
+4. Run the SQL query
 
 ## Database Schema
 
@@ -122,31 +125,27 @@ Several PostgreSQL functions and triggers ensure game integrity:
 
 ## Development Tools
 
-### Prisma Studio
+### Supabase Dashboard
 
 To view and edit data during development:
 
 ```bash
-pnpm db:studio
+# Open your Supabase dashboard
+https://app.supabase.com/project/{your-project-id}/editor
 ```
 
-### Database Migrations
+### Database Schema Updates
 
-To create a new migration after schema changes:
+When making schema changes:
 
-```bash
-pnpm prisma migrate dev --name your-migration-name
-```
+1. Update the SQL in `scripts/create-tables-manual.sql`
+2. Apply changes via Supabase dashboard's SQL Editor
+3. Update the corresponding TypeScript types in `/types` folder
 
 ## Production Deployment
 
 1. Ensure environment variables are properly set in your deployment platform
-2. Run database migrations during deployment:
-
-```bash
-pnpm prisma generate
-pnpm db:push
-```
+2. Make sure all schema changes are applied to your production Supabase instance
 
 ## Security Considerations
 
@@ -170,7 +169,9 @@ pnpm db:push
 
 ## Notes
 
-- The database schema is designed to be extensible for future features
+- The database schema uses snake_case for table names and columns following Supabase conventions
+- Column names are converted to camelCase in application code
+- The database is accessed using Supabase's JavaScript SDK
 - All timestamps are stored in UTC
 - Foreign key relationships ensure data integrity
 - Indexes are created automatically for optimal query performance

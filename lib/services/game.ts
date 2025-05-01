@@ -1,5 +1,5 @@
-import { GameMode, GameStatus } from '@prisma/client';
-import { db } from './database';
+import { GameMode, GameStatus } from "@/types/game";
+import { db } from "./supabase-database";
 
 class GameService {
   private static instance: GameService;
@@ -16,7 +16,7 @@ class GameService {
   async createGame({
     roomId,
     mode,
-    creatorId
+    creatorId,
   }: {
     roomId: string;
     mode: GameMode;
@@ -25,7 +25,7 @@ class GameService {
     const game = await db.createGame({
       roomId,
       mode,
-      creatorId
+      creatorId,
     });
 
     return game;
@@ -35,7 +35,7 @@ class GameService {
     userId,
     gameId,
     team,
-    position
+    position,
   }: {
     userId: string;
     gameId: string;
@@ -43,14 +43,15 @@ class GameService {
     position: number;
   }) {
     const game = await db.getGameByRoomId(gameId);
-    if (!game) throw new Error('Game not found');
-    if (game.status !== GameStatus.WAITING) throw new Error('Game already started');
+    if (!game) throw new Error("Game not found");
+    if (game.status !== GameStatus.WAITING)
+      throw new Error("Game already started");
 
     const player = await db.addPlayerToGame({
       userId,
       gameId,
       team,
-      position
+      position,
     });
 
     return player;
@@ -58,12 +59,13 @@ class GameService {
 
   async startGame(gameId: string) {
     const game = await db.getGameByRoomId(gameId);
-    if (!game) throw new Error('Game not found');
-    if (game.status !== GameStatus.WAITING) throw new Error('Game already started');
+    if (!game) throw new Error("Game not found");
+    if (game.status !== GameStatus.WAITING)
+      throw new Error("Game already started");
 
     // Create a new game session
     const session = await db.createGameSession(gameId);
-    
+
     // Update game status
     await db.updateGameStatus(gameId, GameStatus.PLAYING);
 
@@ -72,13 +74,14 @@ class GameService {
 
   async endGame(gameId: string, winnerId: string) {
     const game = await db.getGameByRoomId(gameId);
-    if (!game) throw new Error('Game not found');
-    if (game.status !== GameStatus.PLAYING) throw new Error('Game not in progress');
+    if (!game) throw new Error("Game not found");
+    if (game.status !== GameStatus.PLAYING)
+      throw new Error("Game not in progress");
 
     // Update game session
     if (game.session) {
       await db.updateGameSession(game.session.id, {
-        endedAt: new Date()
+        endedAt: new Date(),
       });
     }
 
@@ -92,7 +95,7 @@ class GameService {
     const replay = await db.createGameReplay({
       gameId,
       moves,
-      summary
+      summary,
     });
 
     return replay;
@@ -100,7 +103,7 @@ class GameService {
 
   async getGameState(roomId: string) {
     const game = await db.getGameByRoomId(roomId);
-    if (!game) throw new Error('Game not found');
+    if (!game) throw new Error("Game not found");
 
     return game;
   }

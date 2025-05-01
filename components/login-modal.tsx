@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -32,6 +32,7 @@ import {
   signInWithOAuth,
   type OAuthProvider,
 } from "@/lib/supabase-auth";
+import { supabase } from "@/lib/supabase";
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
@@ -67,6 +68,9 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [usernameExists, setUsernameExists] = useState(false);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const usernameCheckTimeout = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
   const { user, loginAnonymously } = useAuthStore();
 
@@ -124,7 +128,54 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     }
   };
 
+  // Check if username exists
+  const checkUsername = async (username: string) => {
+    if (username.length < 3) {
+      setUsernameExists(false);
+      return;
+    }
+
+    setIsCheckingUsername(true);
+
+    // Clear any existing timeout
+    if (usernameCheckTimeout.current) {
+      clearTimeout(usernameCheckTimeout.current);
+    }
+
+    // Set a new timeout to check username after typing stops
+    usernameCheckTimeout.current = setTimeout(async () => {
+      try {
+        const { data } = await supabase
+          .from("users")
+          .select("username")
+          .eq("username", username)
+          .single();
+
+        setUsernameExists(!!data);
+      } catch (error) {
+        // If error is "No rows returned by the query", username is available
+        setUsernameExists(false);
+      } finally {
+        setIsCheckingUsername(false);
+      }
+    }, 500);
+  };
+
+  useEffect(() => {
+    // Cleanup timeout on component unmount
+    return () => {
+      if (usernameCheckTimeout.current) {
+        clearTimeout(usernameCheckTimeout.current);
+      }
+    };
+  }, []);
+
   const onAnonymousSubmit = async (values: z.infer<typeof anonymousSchema>) => {
+    if (usernameExists) {
+      setError("This username is already taken. Please choose another one.");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -395,6 +446,10 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
                           className="medieval-input"
                           placeholder="YourUsername"
                           {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            checkUsername(e.target.value);
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -470,12 +525,28 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
                     <FormItem>
                       <FormLabel>Choose a Username</FormLabel>
                       <FormControl>
-                        <Input
-                          className="medieval-input"
-                          placeholder="Sir Lancelot"
-                          {...field}
-                        />
+                        <div className="relative">
+                          <Input
+                            className="medieval-input"
+                            placeholder="Sir Lancelot"
+                            {...field}
+                            onChange={(e) => {
+                              field.onChange(e);
+                              checkUsername(e.target.value);
+                            }}
+                          />
+                          {isCheckingUsername && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
                       </FormControl>
+                      {usernameExists && field.value.length >= 3 && (
+                        <p className="text-sm font-medium text-destructive mt-1">
+                          This username is already taken
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -484,7 +555,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
                 <Button
                   type="submit"
                   className="w-full medieval-button bg-primary hover:bg-primary/90 text-primary-foreground"
-                  disabled={isLoading}
+                  disabled={isLoading || usernameExists || isCheckingUsername}
                 >
                   {isLoading ? (
                     <>

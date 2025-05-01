@@ -1,4 +1,4 @@
-import { db } from "./database";
+import { db } from "./supabase-database";
 
 class UserService {
   private static instance: UserService;

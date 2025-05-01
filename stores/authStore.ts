@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { User } from "@/app/types/user";
-import { supabaseAuth, signOut as supabaseSignOut } from "@/lib/supabase-auth";
+import {
+  supabaseAuth,
+  signOut as supabaseSignOut,
+  signInAnonymously,
+} from "@/lib/supabase-auth";
 
 interface AuthState {
   user: User | null;
@@ -24,6 +28,7 @@ function supabaseUserToUser(supabaseUser: any): User {
   const provider = supabaseUser.app_metadata?.provider;
   const isDiscord = provider === "discord";
   const isGoogle = provider === "google";
+  const isAnonymous = !provider && !supabaseUser.email;
 
   // Get the best username based on provider
   let username = "User";
@@ -62,6 +67,12 @@ function supabaseUserToUser(supabaseUser: any): User {
       "User";
     name = userData.name || userData.full_name || username;
     avatar = userData.picture || userData.avatar_url;
+  } else if (isAnonymous) {
+    // Special handling for anonymous users - prioritize username from metadata
+    // This prevents the temporary "User" display before updating to the real username
+    username = userData.username || "Guest";
+    name = userData.name || username;
+    avatar = userData.avatar_url || userData.picture;
   } else {
     // Default fallback for other providers or email
     username =
@@ -87,7 +98,7 @@ function supabaseUserToUser(supabaseUser: any): User {
     username,
     email: supabaseUser.email,
     avatar,
-    isAnonymous: false,
+    isAnonymous: isAnonymous,
     name,
     image: avatar,
   };
@@ -122,35 +133,44 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (isLoading) => set({ isLoading }),
 
       loginAnonymously: async (username) => {
-        const { isAuthenticated, user } = get();
+        try {
+          const { isAuthenticated, user } = get();
 
-        if (isAuthenticated && !user?.isAnonymous) {
-          console.warn(
-            "[AuthStore] Already authenticated, cannot login anonymously."
-          );
-          return;
+          if (isAuthenticated && !user?.isAnonymous) {
+            console.warn(
+              "[AuthStore] Already authenticated, cannot login anonymously."
+            );
+            return;
+          }
+
+          set({ isLoading: true });
+
+          // Use Supabase anonymous sign-in
+          const { user: supabaseUser } = await signInAnonymously(username);
+          if (!supabaseUser) {
+            throw new Error("Failed to create anonymous user");
+          }
+
+          console.log("[AuthStore] Anonymous user created:", supabaseUser);
+
+          // Convert to our user type
+          const authUser = supabaseUserToUser(supabaseUser);
+
+          // Force anonymous flag to be true even if detection fails
+          authUser.isAnonymous = true;
+
+          console.log("[AuthStore] Converted anonymous user:", authUser);
+
+          set({
+            user: authUser,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+        } catch (error) {
+          console.error("[AuthStore] Error during anonymous login:", error);
+          set({ isLoading: false });
+          throw error;
         }
-
-        const anonId = `anon_${Date.now()}`;
-        const avatarPlaceholder = `/placeholder.svg?height=32&width=32&text=${username
-          .charAt(0)
-          .toUpperCase()}`;
-
-        const authUser: User = {
-          id: anonId,
-          username: username,
-          avatar: avatarPlaceholder,
-          isAnonymous: true,
-          name: username,
-          image: avatarPlaceholder,
-        };
-
-        // Store in localStorage (persisted store will handle this automatically)
-        set({
-          user: authUser,
-          isAuthenticated: true,
-          isLoading: false,
-        });
       },
 
       logout: async () => {
@@ -265,7 +285,14 @@ if (typeof window !== "undefined") {
       store.setUser(null);
     } else if (event === "USER_UPDATED") {
       if (session?.user) {
+        const currentUser = store.user;
         const authUser = supabaseUserToUser(session.user);
+
+        // Preserve the isAnonymous flag when updating an existing user
+        if (currentUser?.isAnonymous) {
+          authUser.isAnonymous = true;
+        }
+
         store.setUser(authUser);
       }
     }
