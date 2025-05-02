@@ -14,6 +14,8 @@ The current implementation:
 4. Maintains a consistent message delivery mechanism
 5. Implements reconnection logic with exponential backoff
 6. Uses channel caching to improve performance and stability
+7. Synchronizes game state through Supabase database for real players
+8. Tracks player presence for connection status
 
 ### Game Flow and Message Types
 
@@ -25,6 +27,7 @@ The game progresses through several phases, each with specific message types:
    - `room:leave` - Player leaves the room
    - `player:joined` - Broadcast when a player (or bot) joins
    - `game:start` - Host initiates game start (server-processed)
+   - `presence:sync` - Updates player connection status
 
 2. **Initial Deal Phase**
 
@@ -67,6 +70,16 @@ This custom hook manages the Supabase Realtime connection. It includes:
 - Message queuing for retry
 - Intelligent routing based on message type
 - Connection state monitoring
+- Presence tracking for player connection status
+
+#### Database Synchronization
+
+Game state is synchronized through the Supabase database:
+
+- Game state is stored in the `game_rooms` table
+- Trump votes are stored in the `trump_votes` table
+- Player actions are stored in the `player_actions` table
+- Realtime subscriptions to database changes keep all clients in sync
 
 ```typescript
 export function useSupabaseRealtime(roomId: string) {
@@ -173,6 +186,15 @@ Channels are cached in a `Map` to prevent unnecessary recreation, improving perf
 - Broadcast to self (to receive your own messages)
 - Presence tracking for improved reliability
 - Connection status monitoring
+
+### Presence Implementation
+
+Player presence is tracked using Supabase Realtime's presence feature:
+
+- Players enter presence when they join a room
+- Presence state includes user ID, username, and connection timestamp
+- Presence sync events update player connection status in the UI
+- Disconnected players are visually indicated in the game
 
 ```typescript
 // Channel cache implementation

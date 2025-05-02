@@ -61,7 +61,7 @@ export interface GameStoreState {
   joinRoom: (roomId: string, playerName: string) => Promise<void>;
   leaveRoom: () => void;
   startGame: () => void;
-  playCard: (card: Card) => void;
+  playCard: (card: Card) => Promise<void>;
   placeBid: (bid: number) => void;
   selectTrump: (suit: Suit) => void;
   addBots: () => Promise<void>;
@@ -86,6 +86,7 @@ export interface GameStoreState {
   // Real-time communication
   sendMessage: (message: any) => Promise<boolean>;
   subscribeToRealtime: () => Promise<void>;
+  syncGameStateToDatabase: () => Promise<boolean>;
 
   // Team assignments
   setTeamAssignments: (teams: Record<string, "royals" | "rebels">) => void;

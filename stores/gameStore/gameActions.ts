@@ -118,45 +118,88 @@ export const createGameActions = (
 
     console.log("[GameStore] Updated players list:", updatedPlayers);
 
-    // For now, we'll just simulate joining a room
-    const mockRoom: GameRoom = {
-      id: roomId,
-      createdAt: Date.now(),
-      lastActivity: Date.now(),
-      players: updatedPlayers,
-      gameState: {
-        currentTurn: null,
-        trumpSuit: get().trumpSuit, // Preserve trump suit
-        currentBid: 0,
-        currentBidder: null,
-        trickCards: {},
-        roundNumber: 0,
-        gamePhase: preserveGameStatus ? gameStatus : "waiting",
-        teams: {
-          royals: [],
-          rebels: [],
-        },
-        scores: get().scores, // Preserve scores
-        consecutiveTricks: {
-          royals: 0,
-          rebels: 0,
-        },
-        lastTrickWinner: null,
-        dealerIndex: 0,
-        trumpCaller: null,
-      },
-    };
+    // Import the database service
+    const { SupabaseDatabase } = await import(
+      "@/lib/services/supabase-database"
+    );
 
-    // Simulate delay for network request
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      // Check if the room exists in the database
+      let gameRoom = await SupabaseDatabase.getGameRoom(roomId);
+
+      // If the room doesn't exist, create it
+      if (!gameRoom) {
+        console.log(`[GameStore] Room ${roomId} doesn't exist, creating it`);
+        gameRoom = await SupabaseDatabase.createGameRoom(
+          roomId,
+          user.id,
+          get().gameMode
+        );
+
+        if (!gameRoom) {
+          console.error("[GameStore] Failed to create game room");
+          toast.error("Failed to create game room. Please try again.");
+          set({ isLoading: false });
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("[GameStore] Error checking/creating game room:", error);
+      toast.error("Error joining game. Please try again.");
+      set({ isLoading: false });
+      return;
+    }
+
+    // Declare updatedRoom variable outside the try block so it's accessible in the set function
+    let updatedRoom = null;
+
+    try {
+      // Add the current player to the room
+      const addPlayerResult = await SupabaseDatabase.addPlayerToRoom(
+        roomId,
+        currentUserPlayer
+      );
+
+      if (!addPlayerResult) {
+        console.error("[GameStore] Failed to add player to room");
+        toast.error("Failed to join game room. Please try again.");
+        set({ isLoading: false });
+        return;
+      }
+
+      // Get the updated room state
+      updatedRoom = await SupabaseDatabase.getGameRoom(roomId);
+
+      if (!updatedRoom) {
+        console.error("[GameStore] Failed to get updated room state");
+        toast.error("Failed to retrieve game room data. Please try again.");
+        set({ isLoading: false });
+        return;
+      }
+    } catch (error) {
+      console.error("[GameStore] Error adding player to room:", error);
+      toast.error("Error joining game. Please try again.");
+      set({ isLoading: false });
+      return;
+    }
+
+    // Make sure we have a valid updatedRoom before setting state
+    if (!updatedRoom) {
+      console.error("[GameStore] No valid room data available");
+      toast.error("Failed to join game. Please try again.");
+      set({ isLoading: false });
+      return;
+    }
 
     set((state) => ({
-      currentRoom: mockRoom,
-      players: updatedPlayers,
+      currentRoom: updatedRoom,
+      players: updatedRoom.players || updatedPlayers,
       isLoading: false,
       isConnected: true,
       // Preserve the current gameStatus if we've recovered state
-      gameStatus: preserveGameStatus ? state.gameStatus : "waiting",
+      gameStatus: preserveGameStatus
+        ? state.gameStatus
+        : updatedRoom.gameState.gamePhase || "waiting",
     }));
 
     // Send join message to the server
@@ -187,12 +230,12 @@ export const createGameActions = (
     await get().subscribeToRealtime();
   },
 
-  leaveRoom: () => {
+  leaveRoom: async () => {
     const { roomId, currentRoom } = get();
     const user = useAuthStore.getState().user;
 
     if (roomId && currentRoom && user) {
-      // Send leave message (in real implementation)
+      // Send leave message
       get().sendMessage({
         type: "room:leave",
         payload: {
@@ -200,6 +243,22 @@ export const createGameActions = (
           playerId: user.id,
         },
       });
+
+      try {
+        // Import the database service
+        const { SupabaseDatabase } = await import(
+          "@/lib/services/supabase-database"
+        );
+
+        // Remove the player from the room in the database
+        await SupabaseDatabase.removePlayerFromRoom(roomId, user.id);
+
+        console.log(
+          `[GameStore] Player ${user.username} removed from room ${roomId}`
+        );
+      } catch (error) {
+        console.error("[GameStore] Error removing player from room:", error);
+      }
     }
 
     set({
@@ -402,7 +461,7 @@ export const createGameActions = (
     }
   },
 
-  playCard: (card: Card) => {
+  playCard: async (card: Card) => {
     const { roomId, currentRoom, currentPlayer, gameStatus, currentTrick } =
       get();
     const user = useAuthStore.getState().user;
@@ -483,17 +542,33 @@ export const createGameActions = (
       get().updatePlayedCards(user.id, card.id);
     }
 
-    // Send play card message to the server
-    get().sendMessage({
-      type: "game:play-card",
-      payload: {
-        roomId,
-        playerId: user.id,
-        playerName: user.username,
+    try {
+      // Import the database service
+      const { SupabaseDatabase } = await import(
+        "@/lib/services/supabase-database"
+      );
+
+      // Record the player action in the database
+      await SupabaseDatabase.recordPlayerAction(roomId, user.id, "play-card", {
         card,
         gamePhase: gameStatus,
-      },
-    });
+        timestamp: new Date().toISOString(),
+      });
+
+      // Send play card message to the server
+      get().sendMessage({
+        type: "game:play-card",
+        payload: {
+          roomId,
+          playerId: user.id,
+          playerName: user.username,
+          card,
+          gamePhase: gameStatus,
+        },
+      });
+    } catch (error) {
+      console.error("[GameStore] Error recording player action:", error);
+    }
 
     // Also update the local state to reflect the played card
     const updatedTrick = [...currentTrick, card];

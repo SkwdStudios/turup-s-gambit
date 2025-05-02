@@ -2,6 +2,8 @@ import { useAuthStore } from "../authStore";
 import { useUIStore } from "../uiStore";
 import { determineTrickWinner } from "./cardUtils";
 import { GameStoreState } from "./types";
+import { Player, Card, Suit, GameState } from "@/app/types/game";
+import { supabase } from "@/lib/supabase";
 
 export const createRealtimeFunctions = (
   get: () => GameStoreState,
@@ -173,6 +175,75 @@ export const createRealtimeFunctions = (
     }
   },
 
+  syncGameStateToDatabase: async () => {
+    const {
+      roomId,
+      gameStatus,
+      trumpSuit,
+      currentTrick,
+      scores,
+      currentPlayer,
+      players,
+      teamAssignments,
+    } = get();
+
+    if (!roomId) {
+      console.error("[GameStore] Cannot sync game state: No active room ID");
+      return false;
+    }
+
+    try {
+      // Import the database service
+      const { SupabaseDatabase } = await import(
+        "@/lib/services/supabase-database"
+      );
+
+      // Prepare the game state object to be stored in the database
+      const gameState: GameState = {
+        gamePhase: gameStatus,
+        trumpSuit,
+        currentTurn: currentPlayer,
+        currentBid: 0,
+        currentBidder: null,
+        trickCards: {},
+        roundNumber: 0,
+        teams: {
+          royals: [],
+          rebels: [],
+        },
+        scores,
+        consecutiveTricks: {
+          royals: 0,
+          rebels: 0,
+        },
+        lastTrickWinner: null,
+        dealerIndex: 0,
+        trumpCaller: null,
+        // Store current trick in remainingDeck temporarily
+        remainingDeck: currentTrick,
+        // Store team assignments in trumpVotes temporarily
+        trumpVotes: teamAssignments as unknown as { [playerId: string]: Suit },
+        playersVoted: [],
+      };
+
+      console.log("[GameStore] Syncing game state to database:", gameState);
+
+      // Use the database service to update the game state
+      const success = await SupabaseDatabase.updateGameState(roomId, gameState);
+
+      if (!success) {
+        console.error("[GameStore] Error syncing game state to database");
+        return false;
+      }
+
+      console.log("[GameStore] Game state synced to database successfully");
+      return true;
+    } catch (error) {
+      console.error("[GameStore] Error syncing game state to database:", error);
+      return false;
+    }
+  },
+
   subscribeToRealtime: async () => {
     const { roomId } = get();
 
@@ -193,6 +264,47 @@ export const createRealtimeFunctions = (
           presence: { key: "" }, // Enable presence for connection reliability
         },
       });
+
+      // Subscribe to database changes for game_rooms table
+      // This allows us to sync game state between players
+      const gameRoomChannel = supabase
+        .channel(`game_room:${roomId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "game_rooms",
+            filter: `id=eq.${roomId}`,
+          },
+          (payload) => {
+            console.log("[GameStore] Received game room update:", payload);
+
+            // Extract the new game state from the payload
+            const newGameState = payload.new?.game_state;
+
+            if (newGameState) {
+              console.log(
+                "[GameStore] Updating game state from database:",
+                newGameState
+              );
+
+              // Update the local game state with the new state from the database
+              set((state) => ({
+                ...state,
+                gameStatus: newGameState.gamePhase || state.gameStatus,
+                trumpSuit: newGameState.trumpSuit || state.trumpSuit,
+                currentTrick: newGameState.currentTrick || state.currentTrick,
+                scores: newGameState.scores || state.scores,
+                currentPlayer: newGameState.currentTurn || state.currentPlayer,
+                players: newGameState.players || state.players,
+                teamAssignments:
+                  newGameState.teamAssignments || state.teamAssignments,
+              }));
+            }
+          }
+        )
+        .subscribe();
 
       // Handle different message types
       channel.on("broadcast", { event: "message" }, (payload) => {
@@ -463,12 +575,10 @@ export const createRealtimeFunctions = (
               set((state) => {
                 // 1. Create updated player list with card removed from hand
                 const updatedPlayers = state.players.map((p) => {
-                  // If this player played the card, remove it from their hand
+                  // If this is the player who played the card, remove it from their hand
                   if (
-                    currentUser &&
-                    (p.id === currentUser.id ||
-                      p.name === currentUser.username) &&
-                    isCurrentUserPlaying
+                    p.id === message.payload.playerId ||
+                    p.name === message.payload.playerName
                   ) {
                     console.log(
                       `[GameStore] Removing card ${playedCard.id} from ${p.name}'s hand`
@@ -498,6 +608,12 @@ export const createRealtimeFunctions = (
                 uiStore.setPlayingCardId(null);
                 uiStore.setCardPlayLoading(false);
               }
+
+              // Update the game state in the database
+              get().syncGameStateToDatabase();
+
+              // Update the game state in the database
+              get().syncGameStateToDatabase();
 
               // Process trick completion logic
               if (updatedTrick.length === 4) {

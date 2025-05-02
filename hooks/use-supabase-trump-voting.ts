@@ -5,6 +5,7 @@ import { useGameStore } from "@/stores";
 import { useAuthStore } from "@/stores/authStore";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { SupabaseDatabase } from "@/lib/services/supabase-database";
 
 // Define a type for trump votes
 type TrumpVotes = Record<string, number>;
@@ -158,6 +159,9 @@ export function useSupabaseTrumpVoting(roomId: string) {
         playerName: user.username,
         timestamp: new Date().toISOString(),
       };
+
+      // Record vote in the database
+      await SupabaseDatabase.recordTrumpVote(roomId, user.id, suit as Suit);
 
       // Broadcast the vote
       await supabase.channel(`room:${roomId}:trump`).send({
