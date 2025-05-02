@@ -1,0 +1,13 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Environment Information
+
+This project runs locally in the following environment:
+- OS: Windows 11
+- Node.js Version: v23.4.0
+- Package Manager: pnpm
+- Shell: PowerShell
+

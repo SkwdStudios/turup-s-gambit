@@ -30,20 +30,26 @@ This project follows the Next.js App Router pattern with a modular directory str
 - [hooks/](mdc:hooks): Custom React hooks for shared stateful logic.
 
 - [lib/](mdc:lib): Data fetching helpers and general utilities.
+  - [lib/supabase.ts](mdc:lib/supabase.ts): Supabase client configuration and initialization.
+  - [lib/supabase-auth.ts](mdc:lib/supabase-auth.ts): Authentication functions for Supabase.
+  - [lib/services/](mdc:lib/services): Database and other service implementations.
+    - [lib/services/supabase-database.ts](mdc:lib/services/supabase-database.ts): Supabase database service.
+  - [lib/db/](mdc:lib/db): Database access layer for simplified data operations.
+  - [lib/utils/](mdc:lib/utils): Various utility functions and helpers.
 
 - [utils/](mdc:utils): Generic helper functions and utilities.
 
 - [stores/](mdc:stores): State management stores (using Zustand).
+  - [stores/authStore.ts](mdc:stores/authStore.ts): Authentication state management.
+  - [stores/gameStore/](mdc:stores/gameStore): Game state management modules.
 
 - [styles/](mdc:styles): Global CSS and style definitions.
 
 - [public/](mdc:public): Static assets such as images, icons, and fonts.
 
-- [supabase/](mdc:supabase): Supabase client setup and configurations.
-
-- [prisma/](mdc:prisma): Prisma schema, migrations, and client setup.
-
 - [types/](mdc:types): TypeScript type definitions for the application.
+  - [types/game.ts](mdc:types/game.ts): Game-related type definitions.
+  - [types/user.ts](mdc:types/user.ts): User-related type definitions.
 
 - [Documentation/](mdc:Documentation): Project documentation files.
   - [Documentation/DOCUMENTATION.md](mdc:Documentation/DOCUMENTATION.md): General project documentation.
@@ -51,10 +57,13 @@ This project follows the Next.js App Router pattern with a modular directory str
   - [Documentation/REALTIME_IMPLEMENTATION.md](mdc:Documentation/REALTIME_IMPLEMENTATION.md): Realtime functionality implementation details.
   - [Documentation/FLOW.md](mdc:Documentation/FLOW.md): Application flow documentation.
   - [Documentation/PRD.md](mdc:Documentation/PRD.md): Product Requirements Document.
+  - [Documentation/MIGRATION.md](mdc:Documentation/MIGRATION.md): Migration from Prisma to Supabase documentation.
 
 - [scripts/](mdc:scripts): Utility scripts for development and testing.
   - [scripts/verify-env.ts](mdc:scripts/verify-env.ts): Environment variable verification.
   - [scripts/test-realtime.js](mdc:scripts/test-realtime.js): Script for testing realtime functionality.
+  - [scripts/check-tables.js](mdc:scripts/check-tables.js): Checks if required database tables exist.
+  - [scripts/create-tables-manual.sql](mdc:scripts/create-tables-manual.sql): SQL for creating required tables in Supabase.
 
 # Configuration Files
 
